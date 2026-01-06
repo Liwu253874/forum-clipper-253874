@@ -37,6 +37,17 @@ function cleanTitleBySite(title, pageUrl) {
   let t = safeText(title || "");
   if (!t) return t;
 
+  const ensurePrefix = (str, prefix) => {
+    if (!str || str.includes(prefix)) return str;
+    const m = str.match(/^((?:【[^【】]+】)+)/); // 保留已有前缀块
+    if (m) return `${m[1]}${prefix}${str.slice(m[1].length)}`;
+    return `${prefix}${str}`;
+  };
+  const ensureSuffix = (str, suffix) => {
+    if (!str || str.includes(suffix)) return str;
+    return `${str}${suffix}`;
+  };
+
   // 腾讯新闻
   const isTencentNews =
     /(^|\.)qq\.com/i.test(new URL(pageUrl || location.href).hostname) ||
@@ -52,6 +63,8 @@ function cleanTitleBySite(title, pageUrl) {
   const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
   if (isZhihu) {
     t = t.replace(/\s*[-]\s*.*?的回答/, "");
+    // 知乎适配：不需要新闻前缀，将站点标识放在标题后方
+    t = ensureSuffix(t, "【知乎】");
   }
 
   return t.trim();
@@ -94,6 +107,60 @@ function cleanTextBySite(text, pageUrl) {
   }
 
   return t.trim();
+}
+
+/**
+ * 针对特定站点的作者信息清洗
+ */
+function cleanBylineBySite(byline, pageUrl, doc) {
+  let b = safeText(byline || "");
+  if (!b) return b;
+
+  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+
+  if (isZhihu) {
+    b = b.replace(/^关于作者\s*/i, "");
+    const parsed = extractZhihuAuthorName(b, doc || document) || "";
+    if (parsed.trim()) return parsed.trim();
+  }
+
+  return b.trim();
+}
+
+/**
+ * 知乎适配：提取作者用户名，优先 byline，其次 DOM，失败时返回原文
+ */
+function extractZhihuAuthorName(bylineText, doc) {
+  try {
+    const text = safeText(bylineText || "");
+    // 1) 直接从 byline 中抓取 “关于作者xxx” 或首个连续用户名
+    const bylineMatch = text.match(/关于作者\s*([^\s·,，。/|｜]+)/);
+    if (bylineMatch && bylineMatch[1]) return bylineMatch[1];
+    const firstToken = text.match(/^[\p{L}\p{N}_-]+/u);
+    if (firstToken && firstToken[0]) return firstToken[0];
+
+    // 2) DOM fallback：常见作者位置
+    const d = doc || document;
+    if (d) {
+      const selectors = [
+        'meta[itemprop="author"]',
+        'meta[name="author"]',
+        '.AuthorInfo .AuthorInfo-head span',
+        '.ContentItem .AuthorInfo-name span',
+        '.AuthorInfo a[href*="/people/"] span',
+        'a.UserLink-link',
+        '.UserLink-link'
+      ];
+      for (const sel of selectors) {
+        const el = d.querySelector(sel);
+        const name = safeText(el ? (el.content || el.innerText || el.textContent) : "");
+        if (name) return name;
+      }
+    }
+  } catch (_) {
+    // ignore and fall through
+  }
+  return bylineText;
 }
 
 /**
@@ -254,12 +321,13 @@ function extractWithReadability(pageUrl) {
 
     const cleanedTitle = cleanTitleBySite(article.title || document.title || "", pageUrl || location.href);
     const cleanedText = cleanTextBySite(textWithParagraphs, pageUrl || location.href);
+    const cleanedByline = cleanBylineBySite(article.byline || "", pageUrl || location.href, docClone);
 
     return {
       title: cleanedTitle,
       text: safeText(cleanedText) || "",
       excerpt: safeText(article.excerpt) || "",
-      byline: safeText(article.byline) || "",
+      byline: safeText(cleanedByline) || "",
       siteName: safeText(article.siteName) || ""
     };
   } catch (e) {
@@ -319,7 +387,8 @@ ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
   // const finalTitle = (lastClip.pageTitle || "转发").startsWith(TITLE_PREFIX) ? (lastClip.pageTitle || "转发") : (TITLE_PREFIX + (lastClip.pageTitle || "转发"));
   // titleEl.value = truncate(finalTitle, 60);
 
-  titleEl.value = truncate(lastClip.pageTitle || "转发", 60);
+  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href);
+  titleEl.value = truncate(finalTitle, 60);
 
   msgEl.value = header + "\n" + body;
   if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
