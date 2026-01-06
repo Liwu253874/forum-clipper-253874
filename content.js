@@ -48,6 +48,51 @@ function cleanTitleBySite(title, pageUrl) {
     t = t.replace(/(\s*[_\-｜|]\s*腾讯网\s*)$/i, "");
   }
 
+  // 知乎
+  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+  if (isZhihu) {
+    t = t.replace(/\s*[-]\s*.*?的回答/, "");
+  }
+
+  return t.trim();
+}
+
+/**
+ * 针对特定站点的正文清洗（截断、去噪）
+ */
+function cleanTextBySite(text, pageUrl) {
+  let t = text || "";
+  if (!t) return t;
+
+  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+
+  if (isZhihu) {
+    // 1. 去除开头的“xxx人赞同了该回答”
+    t = t.replace(/^\s*.*?人赞同了该回答\s*/, "");
+
+    // 2. 截断“编辑于...”或“发布于...”
+    // 示例：编辑于 2026-01-05 14:22・辽宁
+    // 示例：发布于 2026-01-04 12:05
+    const patterns = [
+      /编辑于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/,
+      /发布于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/
+    ];
+
+    let minIndex = -1;
+    for (const p of patterns) {
+      const match = p.exec(t);
+      if (match) {
+        if (minIndex === -1 || match.index < minIndex) {
+          minIndex = match.index;
+        }
+      }
+    }
+
+    if (minIndex !== -1) {
+      t = t.substring(0, minIndex);
+    }
+  }
+
   return t.trim();
 }
 
@@ -208,10 +253,11 @@ function extractWithReadability(pageUrl) {
     const textWithParagraphs = htmlToTextWithParagraphs(contentHtml);
 
     const cleanedTitle = cleanTitleBySite(article.title || document.title || "", pageUrl || location.href);
+    const cleanedText = cleanTextBySite(textWithParagraphs, pageUrl || location.href);
 
     return {
       title: cleanedTitle,
-      text: safeText(textWithParagraphs) || "",
+      text: safeText(cleanedText) || "",
       excerpt: safeText(article.excerpt) || "",
       byline: safeText(article.byline) || "",
       siteName: safeText(article.siteName) || ""
@@ -300,7 +346,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // 1) 有选中 → 用选中（保留段落 + 处理图片）
   const selHtml = getSelectionHtml();
-  const selText = selHtml ? htmlToTextWithParagraphs(selHtml) : "";
+  let selText = selHtml ? htmlToTextWithParagraphs(selHtml) : "";
+  selText = cleanTextBySite(selText, pageUrl);
 
   if (selText) {
     sendResponse({
