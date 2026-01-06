@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "253874 Quick Repost",
+  "version": "0.1.0",
+  "description": "Select content and repost to 253874.net quickly.",
+  "permissions": ["contextMenus", "tabs", "scripting", "storage"],
+  "host_permissions": ["https://www.253874.net/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["Readability.js","content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

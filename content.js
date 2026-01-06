@@ -1,0 +1,333 @@
+// content.js
+// 功能：
+// 1) 任意网页：优先抓“选中内容”，未选中则用 Readability 提取全文
+// 2) 提取时保留段落/换行/列表，并将正文 <img> 转成可插入内容的图片表达（兼容腾讯无扩展名图片）
+// 3) 在 https://www.253874.net/post：读取 storage 的 lastClip，自动填充发帖表单
+//
+// 依赖：manifest.json 必须先加载 Readability.js 再加载本文件：
+// "js": ["Readability.js", "content.js"]
+
+function getSelectionHtml() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return "";
+  const container = document.createElement("div");
+  for (let i = 0; i < sel.rangeCount; i++) {
+    container.appendChild(sel.getRangeAt(i).cloneContents());
+  }
+  return (container.innerHTML || "").trim();
+}
+
+function safeText(str) {
+  return (str || "").replace(/\r\n/g, "\n").trim();
+}
+
+function truncate(str, maxLen) {
+  if (!str) return "";
+  if (str.length <= maxLen) return str;
+  return str.slice(0, Math.max(0, maxLen - 1)) + "…";
+}
+
+/**
+ * 腾讯/部分站点标题清洗：
+ * - "..._腾讯新闻"  -> "..."
+ * - "...-腾讯新闻"  -> "..."
+ * - "...｜腾讯新闻" -> "..."
+ */
+function cleanTitleBySite(title, pageUrl) {
+  let t = safeText(title || "");
+  if (!t) return t;
+
+  // 腾讯新闻
+  const isTencentNews =
+    /(^|\.)qq\.com/i.test(new URL(pageUrl || location.href).hostname) ||
+    /inews\.qq\.com/i.test(pageUrl || "") ||
+    /news\.qq\.com/i.test(pageUrl || "");
+
+  if (isTencentNews) {
+    t = t.replace(/(\s*[_\-｜|]\s*腾讯新闻\s*)$/i, "");
+    t = t.replace(/(\s*[_\-｜|]\s*腾讯网\s*)$/i, "");
+  }
+
+  return t.trim();
+}
+
+/**
+ * 归一化图片 URL：
+ * - //example.com/a.jpg?x=1 -> https://example.com/a.jpg
+ * - http(s)://... -> 去掉 ?# 后缀
+ * - data: / blob: -> 丢弃
+ * - 相对路径 -> 转绝对
+ *
+ * allowNoExt=true：允许腾讯这种无扩展名图片（/641）返回
+ */
+function normalizeImageUrl(src, allowNoExt = false) {
+  if (!src) return "";
+  src = String(src).trim();
+  if (!src) return "";
+
+  if (src.startsWith("data:") || src.startsWith("blob:")) return "";
+  if (src.startsWith("//")) src = "https:" + src;
+
+  try {
+    src = new URL(src, location.href).toString();
+  } catch (_) {}
+
+  src = src.split("#")[0].split("?")[0];
+
+  const lower = src.toLowerCase();
+  const hasExt = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"].some(ext => lower.endsWith(ext));
+
+  if (hasExt) return src;
+  if (allowNoExt) return src; // 允许腾讯这种无扩展名
+
+  return "";
+}
+
+/**
+ * 生成要写入帖子的图片表示：
+ * - 普通站点：优先输出直链（你论坛可识别 .jpg 自动渲染）
+ * - 腾讯新闻（无扩展名常见）：输出 <img src="...">
+ */
+function formatImageForPost(url) {
+  if (!url) return "";
+
+  const isTencentInews = /inews\.gtimg\.com/i.test(url) || /inews\.qq\.com/i.test(location.href);
+
+  if (isTencentInews) {
+    return `<img src="${url}">`;
+  }
+
+  // 默认：输出 url（方便你论坛识别 jpg/png 自动渲染）
+  return url;
+}
+
+/**
+ * HTML -> 纯文本（尽量保留段落/换行/列表）
+ * 并把 <img> 转成图片直链 或 <img src="...">（腾讯适配）
+ */
+function htmlToTextWithParagraphs(html) {
+  if (!html) return "";
+
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const out = [];
+
+  const blockTags = new Set([
+    "P", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "ASIDE",
+    "H1", "H2", "H3", "H4", "H5", "H6",
+    "BLOCKQUOTE", "PRE",
+    "UL", "OL", "LI",
+    "TABLE", "TR"
+  ]);
+
+  function pushNewline(count = 1) {
+    while (count-- > 0) out.push("\n");
+  }
+
+  function walk(node) {
+    if (!node) return;
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = node.nodeValue.replace(/[ \t]+/g, " ");
+      if (t) out.push(t);
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const tag = node.tagName;
+
+    if (tag === "BR") {
+      pushNewline(1);
+      return;
+    }
+
+    // 图片处理：腾讯新闻可能无扩展名，所以 allowNoExt=true
+    if (tag === "IMG") {
+      const src = node.getAttribute("src") || "";
+      const fallback =
+        node.getAttribute("data-src") ||
+        node.getAttribute("data-original") ||
+        node.getAttribute("data-lazy-src") ||
+        "";
+
+      const url =
+        normalizeImageUrl(src, true) ||
+        normalizeImageUrl(fallback, true);
+
+      const imgText = formatImageForPost(url);
+      if (imgText) {
+        pushNewline(2);
+        out.push(imgText);
+        pushNewline(2);
+      }
+      return;
+    }
+
+    if (tag === "LI") {
+      pushNewline(1);
+      out.push("- ");
+    }
+
+    if (tag === "PRE") {
+      pushNewline(1);
+      out.push(node.innerText || node.textContent || "");
+      pushNewline(2);
+      return;
+    }
+
+    for (const child of node.childNodes) walk(child);
+
+    if (blockTags.has(tag)) {
+      pushNewline(tag === "LI" ? 1 : 2);
+    }
+  }
+
+  walk(doc.body);
+
+  let text = out.join("")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return text;
+}
+
+/**
+ * Readability 全文提取（返回：带段落文本 + 元信息）
+ */
+function extractWithReadability(pageUrl) {
+  try {
+    if (typeof Readability === "undefined") return null;
+
+    const docClone = document.cloneNode(true);
+    const reader = new Readability(docClone);
+    const article = reader.parse();
+    if (!article) return null;
+
+    const contentHtml = article.content || "";
+    const textWithParagraphs = htmlToTextWithParagraphs(contentHtml);
+
+    const cleanedTitle = cleanTitleBySite(article.title || document.title || "", pageUrl || location.href);
+
+    return {
+      title: cleanedTitle,
+      text: safeText(textWithParagraphs) || "",
+      excerpt: safeText(article.excerpt) || "",
+      byline: safeText(article.byline) || "",
+      siteName: safeText(article.siteName) || ""
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 在论坛发帖页自动填充表单
+ */
+async function fillForumPostFormFromStorage() {
+  if (location.origin !== "https://www.253874.net") return;
+  if (location.pathname !== "/post") return;
+
+  const { lastClip } = await chrome.storage.local.get("lastClip");
+  if (!lastClip) return;
+
+  const form = document.querySelector("#postForm");
+  const titleEl = document.querySelector('input[name="title"]');
+  const msgEl = document.querySelector("#messageTextArea");
+  const linkEl = document.querySelector('input[name="about_link"]');
+
+  if (!form || !titleEl || !msgEl) {
+    alert("未检测到发帖表单：请先登录论坛账号，然后再使用转发插件。");
+    return;
+  }
+
+  const now = new Date();
+  const ts =
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ` +
+    `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+  const meta = lastClip.extractedMeta || {};
+  const metaLines = [];
+  if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
+  if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
+  if (meta.excerpt) metaLines.push(`【摘要】${meta.excerpt}`);
+
+  const header =
+`【来源】${lastClip.pageTitle || ""}
+【链接】${lastClip.pageUrl || ""}
+【时间】${ts}
+${metaLines.length ? metaLines.join("\n") + "\n" : ""}
+`;
+
+  const body =
+    lastClip.selectionText
+      ? lastClip.selectionText
+      : (lastClip.extractedFullText
+          ? lastClip.extractedFullText
+          : (lastClip.pageUrl
+              ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}`
+              : ""
+            )
+        );
+
+  // 标题：你之前需要加【新闻】前缀就在这里加
+  // const TITLE_PREFIX = "【新闻】";
+  // const finalTitle = (lastClip.pageTitle || "转发").startsWith(TITLE_PREFIX) ? (lastClip.pageTitle || "转发") : (TITLE_PREFIX + (lastClip.pageTitle || "转发"));
+  // titleEl.value = truncate(finalTitle, 60);
+
+  titleEl.value = truncate(lastClip.pageTitle || "转发", 60);
+
+  msgEl.value = header + "\n" + body;
+  if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+
+  await chrome.storage.local.remove("lastClip");
+
+  if (lastClip.autoSubmit) {
+    setTimeout(() => {
+      form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+      form.submit();
+    }, 2000);
+  }
+}
+
+// 处理 background.js 发来的“抓取内容”请求
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "GET_CLIP") return;
+
+  const rawTitle = document.title || "";
+  const pageUrl = location.href || "";
+  const pageTitle = cleanTitleBySite(rawTitle, pageUrl);
+
+  // 1) 有选中 → 用选中（保留段落 + 处理图片）
+  const selHtml = getSelectionHtml();
+  const selText = selHtml ? htmlToTextWithParagraphs(selHtml) : "";
+
+  if (selText) {
+    sendResponse({
+      pageTitle,
+      pageUrl,
+      selectionText: selText,
+      extractedFullText: "",
+      extractedMeta: {}
+    });
+    return;
+  }
+
+  // 2) 无选中 → Readability 全文提取（标题也清洗）
+  const extracted = extractWithReadability(pageUrl);
+
+  sendResponse({
+    pageTitle: (extracted && extracted.title) ? extracted.title : pageTitle,
+    pageUrl,
+    selectionText: "",
+    extractedFullText: (extracted && extracted.text) ? extracted.text : "",
+    extractedMeta: extracted ? {
+      excerpt: extracted.excerpt,
+      byline: extracted.byline,
+      siteName: extracted.siteName
+    } : {}
+  });
+});
+
+// 如果当前就是发帖页，尝试自动填充
+fillForumPostFormFromStorage();
