@@ -296,12 +296,10 @@ async function fillForumPostFormFromStorage() {
   const metaLines = [];
   if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
   if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
-  if (meta.excerpt) metaLines.push(`【摘要】${meta.excerpt}`);
 
   const header =
 `【来源】${lastClip.pageTitle || ""}
 【链接】${lastClip.pageUrl || ""}
-【时间】${ts}
 ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
 `;
 
