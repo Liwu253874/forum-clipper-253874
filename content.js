@@ -57,6 +57,19 @@ function cleanTitleBySite(title, pageUrl) {
   if (isTencentNews) {
     t = t.replace(/(\s*[_\-｜|]\s*腾讯新闻\s*)$/i, "");
     t = t.replace(/(\s*[_\-｜|]\s*腾讯网\s*)$/i, "");
+    t = ensurePrefix(t, "【新闻】");
+  }
+
+  // 新浪
+  const isSina = /(^|\.)sina\.com\.cn/i.test(new URL(pageUrl || location.href).hostname);
+  if (isSina) {
+    t = ensurePrefix(t, "【新闻】");
+  }
+
+  // 搜狐
+  const isSohu = /(^|\.)sohu\.com/i.test(new URL(pageUrl || location.href).hostname);
+  if (isSohu) {
+    t = ensurePrefix(t, "【新闻】");
   }
 
   // 知乎
@@ -182,7 +195,7 @@ function normalizeImageUrl(src, allowNoExt = false) {
 
   try {
     src = new URL(src, location.href).toString();
-  } catch (_) {}
+  } catch (_) { }
 
   src = src.split("#")[0].split("?")[0];
 
@@ -366,7 +379,7 @@ async function fillForumPostFormFromStorage() {
   if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
 
   const header =
-`【来源】${lastClip.pageTitle || ""}
+    `【来源】${lastClip.pageTitle || ""}
 【链接】${lastClip.pageUrl || ""}
 ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
 `;
@@ -375,12 +388,12 @@ ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
     lastClip.selectionText
       ? lastClip.selectionText
       : (lastClip.extractedFullText
-          ? lastClip.extractedFullText
-          : (lastClip.pageUrl
-              ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}`
-              : ""
-            )
-        );
+        ? lastClip.extractedFullText
+        : (lastClip.pageUrl
+          ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}`
+          : ""
+        )
+      );
 
   // 标题：你之前需要加【新闻】前缀就在这里加
   // const TITLE_PREFIX = "【新闻】";
