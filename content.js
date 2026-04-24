@@ -39,26 +39,65 @@ function extractCurrentZhihuAnswer() {
     if (answerUrlMatch) {
       const answerId = answerUrlMatch[1];
       
-      // 找对应的回答元素
-      const answerEl = document.querySelector(`[data-zop-question][data-zop-answer*="${answerId}"]`) ||
-                       document.querySelector(`.ContentItem[data-zop-question][data-zop-answer*="${answerId}"]`) ||
-                       document.querySelector(`#${answerId}`);
+      // 方法 1：找 name 属性等于 answerId 的元素
+      let answerEl = document.querySelector('[name="' + answerId + '"]');
+      
+      // 方法 2：找 data-zop 中包含 itemId 等于 answerId 的元素
+      if (!answerEl) {
+        const allItems = document.querySelectorAll('[data-zop]');
+        for (const el of allItems) {
+          try {
+            const zopData = JSON.parse(el.getAttribute('data-zop') || '{}');
+            if (zopData.itemId === answerId) {
+              answerEl = el;
+              break;
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
       
       if (answerEl) {
-        const contentEl = answerEl.querySelector('.RichContent-inner, .RichText, .Post-RichText');
+        const contentEl = answerEl.querySelector('.RichContent-inner');
         const authorEl = answerEl.querySelector('.AuthorInfo-name, .UserLink-link');
-        const titleEl = answerEl.querySelector('.QuestionHeader-title, .ContentItem-title');
+        
+        // 从 data-zop 中提取作者名和标题（最可靠）
+        let authorName = '';
+        let title = document.title || '';
+        try {
+          const zopData = JSON.parse(answerEl.getAttribute('data-zop') || '{}');
+          authorName = zopData.authorName || '';
+          if (zopData.title) {
+            title = zopData.title;
+          }
+        } catch (e) {
+          // ignore
+        }
+        
+        // 如果 data-zop 中没有作者名，从 DOM 获取
+        if (!authorName && authorEl) {
+          authorName = safeText(authorEl.innerText);
+        }
+        
+        // 如果 data-zop 中没有标题，从页面获取
+        if (!title) {
+          const questionTitle = document.querySelector('.QuestionHeader-title, .QuestionPage-title, h1');
+          if (questionTitle) {
+            title = safeText(questionTitle.innerText);
+          }
+        }
         
         return {
-          title: titleEl ? safeText(titleEl.innerText) : (document.title || ''),
+          title: title,
           contentHtml: contentEl ? contentEl.innerHTML : answerEl.innerHTML,
-          authorName: authorEl ? safeText(authorEl.innerText) : ''
+          authorName: authorName
         };
       }
     }
     
     // 2) 问题页 (/question/)：找展开的回答或第一个回答
-    if (/\/question\//.test(location.href)) {
+    if (/\/question\//.test(location.href) && !/\/answer\//.test(location.href)) {
       // 优先找展开的回答
       const expandedAnswer = document.querySelector('.ContentItem.Expanded .RichContent-inner, .ContentItem.Expanded .RichText');
       const expandedAuthor = document.querySelector('.ContentItem.Expanded .AuthorInfo-name, .ContentItem.Expanded .UserLink-link');
@@ -72,9 +111,9 @@ function extractCurrentZhihuAnswer() {
         };
       }
       
-      // 否则找第一个回答
-      const firstAnswer = document.querySelector('.ContentItem.Answer .RichContent-inner, .ContentItem.Answer .RichText');
-      const firstAuthor = document.querySelector('.ContentItem.Answer .AuthorInfo-name, .ContentItem.Answer .UserLink-link');
+      // 否则找第一个回答（使用 AnswerItem 类名）
+      const firstAnswer = document.querySelector('.ContentItem.AnswerItem .RichContent-inner, .ContentItem.AnswerItem .RichText');
+      const firstAuthor = document.querySelector('.ContentItem.AnswerItem .AuthorInfo-name, .ContentItem.AnswerItem .UserLink-link');
       
       if (firstAnswer) {
         return {
@@ -90,7 +129,6 @@ function extractCurrentZhihuAnswer() {
   
   return null;
 }
-
 /**
  * 腾讯/部分站点标题清洗：
  * - "..._腾讯新闻"  -> "..."
