@@ -280,7 +280,10 @@ function htmlToTextWithParagraphs(html) {
     if (blockTags.has(tag)) pushNewline(tag === "LI" ? 1 : 2);
   }
   walk(doc.body);
-  return out.join("").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  let text = out.join("").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  // 图片去重：保留 jpg/png/gif，舍弃 webp 重复
+  text = deduplicateImages(text);
+  return text;
 }
 
 function extractWithReadability(pageUrl) {
@@ -427,3 +430,114 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // 先加载设置，再执行表单填充（确保读取到最新设置）
 loadSettings().then(() => fillForumPostFormFromStorage());
+
+
+// ==================== 图片去重 ====================
+
+function getImageBaseName(url) {
+  if (!url) return "";
+  try {
+    const cleanUrl = url.split("?")[0].split("#")[0];
+    const parts = cleanUrl.split("/");
+    const filename = parts[parts.length - 1];
+    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+  } catch (e) { return ""; }
+}
+
+function isWebpUrl(url) {
+  if (!url) return false;
+  return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
+}
+
+function deduplicateImages(text) {
+  if (!text) return text;
+  const imgRegex = /(?:<img[^>]*src=["']?([^"'>\s]+)["']?[^>]*>|(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp)))/gi;
+  const seen = new Map();
+  const toRemove = new Set();
+  let match;
+  while ((match = imgRegex.exec(text)) !== null) {
+    const url = match[1] || match[2];
+    if (!url) continue;
+    const baseName = getImageBaseName(url);
+    if (!baseName) continue;
+    const isWebp = isWebpUrl(url);
+    if (seen.has(baseName)) {
+      const existing = seen.get(baseName);
+      if (!existing.isWebp && isWebp) {
+        toRemove.add(url);
+      } else if (existing.isWebp && !isWebp) {
+        toRemove.add(existing.url);
+        seen.set(baseName, { url, isWebp });
+      } else {
+        toRemove.add(url);
+      }
+    } else {
+      seen.set(baseName, { url, isWebp });
+    }
+  }
+  let result = text;
+  for (const url of toRemove) {
+    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const imgTagRegex = new RegExp(`<img[^>]*src=["']?${escaped}["']?[^>]*>`, "gi");
+    result = result.replace(imgTagRegex, "");
+    const urlRegex = new RegExp(`\n?\s*${escaped}\s*\n?`, "gi");
+    result = result.replace(urlRegex, "\n");
+  }
+  return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+
+
+// ==================== 图片去重 ====================
+
+function getImageBaseName(url) {
+  if (!url) return "";
+  try {
+    const cleanUrl = url.split("?")[0].split("#")[0];
+    const parts = cleanUrl.split("/");
+    const filename = parts[parts.length - 1];
+    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+  } catch (e) { return ""; }
+}
+
+function isWebpUrl(url) {
+  if (!url) return false;
+  return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
+}
+
+function deduplicateImages(text) {
+  if (!text) return text;
+  const imgRegex = /(?:<img[^>]*src=["']?([^"'>\s]+)["']?[^>]*>|(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp)))/gi;
+  const seen = new Map();
+  const toRemove = new Set();
+  let match;
+  while ((match = imgRegex.exec(text)) !== null) {
+    const url = match[1] || match[2];
+    if (!url) continue;
+    const baseName = getImageBaseName(url);
+    if (!baseName) continue;
+    const isWebp = isWebpUrl(url);
+    if (seen.has(baseName)) {
+      const existing = seen.get(baseName);
+      if (!existing.isWebp && isWebp) {
+        toRemove.add(url);
+      } else if (existing.isWebp && !isWebp) {
+        toRemove.add(existing.url);
+        seen.set(baseName, { url, isWebp });
+      } else {
+        toRemove.add(url);
+      }
+    } else {
+      seen.set(baseName, { url, isWebp });
+    }
+  }
+  let result = text;
+  for (const url of toRemove) {
+    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const imgTagRegex = new RegExp(`<img[^>]*src=["']?${escaped}["']?[^>]*>`, "gi");
+    result = result.replace(imgTagRegex, "");
+    const urlRegex = new RegExp(`\n?\s*${escaped}\s*\n?`, "gi");
+    result = result.replace(urlRegex, "\n");
+  }
+  return result.replace(/\n{3,}/g, "\n\n").trim();
+}

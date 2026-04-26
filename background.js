@@ -7,19 +7,9 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "转发到 253874（填充发帖页）",
     contexts: ["page", "selection", "link"]
   });
-  chrome.contextMenus.create({
-    id: "open_settings",
-    title: "⚙️ 转发设置",
-    contexts: ["page"]
-  });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === "open_settings") {
-    chrome.runtime.openOptionsPage();
-    return;
-  }
-
   if (info.menuItemId !== "repost_to_253874") return;
 
   const payload = await chrome.tabs.sendMessage(tab.id, { type: "GET_CLIP" }).catch(() => null);
