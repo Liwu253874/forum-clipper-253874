@@ -1,16 +1,33 @@
 {
   "manifest_version": 3,
   "name": "253874 快速转发",
-  "version": "0.1.0",
+  "name__MSG_zh_CN": "253874 快速转发",
+  "version": "0.2.0",
   "description": "一键将网页内容转发到里屋论坛（253874.net）",
+  "description__MSG_zh_CN": "一键将网页内容转发到里屋论坛（253874.net）",
+  "default_locale": "zh_CN",
   "permissions": ["contextMenus", "tabs", "scripting", "storage"],
   "host_permissions": ["https://www.253874.net/*"],
   "background": { "service_worker": "background.js" },
+  "options_page": "settings.html",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
       "js": ["Readability.js","content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "253874 快速转发",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
 }
