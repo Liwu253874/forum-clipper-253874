@@ -434,19 +434,67 @@ loadSettings().then(() => fillForumPostFormFromStorage());
 
 // ==================== 图片去重 ====================
 
+/**
+ * 提取图片基础标识（去除尺寸后缀）
+ * 例如：v2-xxx_720w.jpg → v2-xxx
+ *       v2-xxx_r.jpg → v2-xxx
+ */
 function getImageBaseName(url) {
   if (!url) return "";
   try {
     const cleanUrl = url.split("?")[0].split("#")[0];
     const parts = cleanUrl.split("/");
     const filename = parts[parts.length - 1];
-    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+    // 去除扩展名
+    let base = filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+    // 去除知乎尺寸后缀：_720w, _1200w, _r, _hd, _b 等
+    base = base.replace(/_(?:\d+w|r|hd|b|raw)$/i, "");
+    return base;
   } catch (e) { return ""; }
 }
 
 function isWebpUrl(url) {
   if (!url) return false;
   return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
+}
+
+/**
+ * 判断是否为知乎尺寸压缩图（_720w 等）
+ */
+function isZhihuResizedUrl(url) {
+  if (!url) return false;
+  const cleanUrl = url.split("?")[0].split("#")[0];
+  // 匹配知乎尺寸后缀：_720w, _1200w, _b 等（不包括 _r 原始图）
+  return /_\d+w$/i.test(cleanUrl) || /_b$/i.test(cleanUrl);
+}
+
+/**
+ * 判断是否为知乎原始高清图（_r.jpg）
+ */
+function isZhihuOriginalUrl(url) {
+  if (!url) return false;
+  const cleanUrl = url.split("?")[0].split("#")[0];
+  return /_r\.(jpg|jpeg|png|gif|webp)$/i.test(cleanUrl);
+}
+
+/**
+ * 图片优先级：数字越大越优先保留
+ * 1 = 普通图片/webp
+ * 2 = 普通非 webp
+ * 3 = 知乎原始图但 webp
+ * 4 = 知乎原始高清图（_r，非 webp）
+ */
+function getImagePriority(url) {
+  if (!url) return 0;
+  const isWebp = isWebpUrl(url);
+  const isZhihuOriginal = isZhihuOriginalUrl(url);
+  const isZhihuResized = isZhihuResizedUrl(url);
+  
+  if (isZhihuOriginal && !isWebp) return 4; // 知乎原始高清图（最高优先）
+  if (isZhihuOriginal && isWebp) return 3;  // 知乎原始图但 webp
+  if (isZhihuResized) return 1;              // 知乎压缩图（最低优先）
+  if (!isWebp) return 2;                     // 普通非 webp
+  return 1;                                  // 普通 webp
 }
 
 function deduplicateImages(text) {
@@ -460,75 +508,20 @@ function deduplicateImages(text) {
     if (!url) continue;
     const baseName = getImageBaseName(url);
     if (!baseName) continue;
-    const isWebp = isWebpUrl(url);
+    const priority = getImagePriority(url);
+    
     if (seen.has(baseName)) {
       const existing = seen.get(baseName);
-      if (!existing.isWebp && isWebp) {
-        toRemove.add(url);
-      } else if (existing.isWebp && !isWebp) {
+      if (priority > existing.priority) {
+        // 新图优先级更高，替换
         toRemove.add(existing.url);
-        seen.set(baseName, { url, isWebp });
+        seen.set(baseName, { url, priority });
       } else {
+        // 现有图优先级更高或相等，丢弃新图
         toRemove.add(url);
       }
     } else {
-      seen.set(baseName, { url, isWebp });
-    }
-  }
-  let result = text;
-  for (const url of toRemove) {
-    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const imgTagRegex = new RegExp(`<img[^>]*src=["']?${escaped}["']?[^>]*>`, "gi");
-    result = result.replace(imgTagRegex, "");
-    const urlRegex = new RegExp(`\n?\s*${escaped}\s*\n?`, "gi");
-    result = result.replace(urlRegex, "\n");
-  }
-  return result.replace(/\n{3,}/g, "\n\n").trim();
-}
-
-
-
-// ==================== 图片去重 ====================
-
-function getImageBaseName(url) {
-  if (!url) return "";
-  try {
-    const cleanUrl = url.split("?")[0].split("#")[0];
-    const parts = cleanUrl.split("/");
-    const filename = parts[parts.length - 1];
-    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
-  } catch (e) { return ""; }
-}
-
-function isWebpUrl(url) {
-  if (!url) return false;
-  return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
-}
-
-function deduplicateImages(text) {
-  if (!text) return text;
-  const imgRegex = /(?:<img[^>]*src=["']?([^"'>\s]+)["']?[^>]*>|(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp)))/gi;
-  const seen = new Map();
-  const toRemove = new Set();
-  let match;
-  while ((match = imgRegex.exec(text)) !== null) {
-    const url = match[1] || match[2];
-    if (!url) continue;
-    const baseName = getImageBaseName(url);
-    if (!baseName) continue;
-    const isWebp = isWebpUrl(url);
-    if (seen.has(baseName)) {
-      const existing = seen.get(baseName);
-      if (!existing.isWebp && isWebp) {
-        toRemove.add(url);
-      } else if (existing.isWebp && !isWebp) {
-        toRemove.add(existing.url);
-        seen.set(baseName, { url, isWebp });
-      } else {
-        toRemove.add(url);
-      }
-    } else {
-      seen.set(baseName, { url, isWebp });
+      seen.set(baseName, { url, priority });
     }
   }
   let result = text;
