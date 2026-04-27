@@ -1,11 +1,34 @@
 // content.js
 // 功能：
-// 1) 任意网页：优先抓“选中内容”，未选中则用 Readability 提取全文
-// 2) 提取时保留段落/换行/列表，并将正文 <img> 转成可插入内容的图片表达（兼容腾讯无扩展名图片）
+// 1) 任意网页：优先抓"选中内容"，未选中则用 Readability 提取全文
+// 2) 提取时保留段落/换行/列表，并将正文 <img> 转成可插入内容的图片表达
 // 3) 在 https://www.253874.net/post：读取 storage 的 lastClip，自动填充发帖表单
+// 4) 支持设置：标题是否带来源标签（【知乎】【新闻】等）
 //
 // 依赖：manifest.json 必须先加载 Readability.js 再加载本文件：
 // "js": ["Readability.js", "content.js"]
+
+// ==================== 设置读取 ====================
+
+let titleTagEnabled = true; // 默认开启（向后兼容）
+
+async function loadSettings() {
+  try {
+    const result = await chrome.storage.sync.get({ titleTagEnabled: true });
+    titleTagEnabled = result.titleTagEnabled;
+  } catch (e) {
+    // ignore
+  }
+}
+
+// 监听设置变更
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.titleTagEnabled !== undefined) {
+    titleTagEnabled = changes.titleTagEnabled.newValue;
+  }
+});
+
+// ==================== 工具函数 ====================
 
 function getSelectionHtml() {
   const sel = window.getSelection();
@@ -28,18 +51,77 @@ function truncate(str, maxLen) {
 }
 
 /**
- * 腾讯/部分站点标题清洗：
- * - "..._腾讯新闻"  -> "..."
- * - "...-腾讯新闻"  -> "..."
- * - "...｜腾讯新闻" -> "..."
+ * 知乎专属：提取当前回答的内容
  */
-function cleanTitleBySite(title, pageUrl) {
+function extractCurrentZhihuAnswer() {
+  try {
+    const answerUrlMatch = location.href.match(/\/answer\/(\d+)/);
+    if (answerUrlMatch) {
+      const answerId = answerUrlMatch[1];
+      let answerEl = document.querySelector('[name="' + answerId + '"]');
+      if (!answerEl) {
+        const allItems = document.querySelectorAll('[data-zop]');
+        for (const el of allItems) {
+          try {
+            const zopData = JSON.parse(el.getAttribute('data-zop') || '{}');
+            if (zopData.itemId === answerId) { answerEl = el; break; }
+          } catch (e) {}
+        }
+      }
+      if (answerEl) {
+        const contentEl = answerEl.querySelector('.RichContent-inner');
+        const authorEl = answerEl.querySelector('.AuthorInfo-name, .UserLink-link');
+        let authorName = '';
+        let title = document.title || '';
+        try {
+          const zopData = JSON.parse(answerEl.getAttribute('data-zop') || '{}');
+          authorName = zopData.authorName || '';
+          if (zopData.title) title = zopData.title;
+        } catch (e) {}
+        if (!authorName && authorEl) authorName = safeText(authorEl.innerText);
+        if (!title) {
+          const questionTitle = document.querySelector('.QuestionHeader-title, .QuestionPage-title, h1');
+          if (questionTitle) title = safeText(questionTitle.innerText);
+        }
+        return { title, contentHtml: contentEl ? contentEl.innerHTML : answerEl.innerHTML, authorName };
+      }
+    }
+    if (/\/question\//.test(location.href) && !/\/answer\//.test(location.href)) {
+      const expandedAnswer = document.querySelector('.ContentItem.Expanded .RichContent-inner, .ContentItem.Expanded .RichText');
+      const expandedAuthor = document.querySelector('.ContentItem.Expanded .AuthorInfo-name, .ContentItem.Expanded .UserLink-link');
+      const expandedTitle = document.querySelector('.QuestionHeader-title');
+      if (expandedAnswer) {
+        return {
+          title: expandedTitle ? safeText(expandedTitle.innerText) : (document.title || ''),
+          contentHtml: expandedAnswer.innerHTML,
+          authorName: expandedAuthor ? safeText(expandedAuthor.innerText) : ''
+        };
+      }
+      const firstAnswer = document.querySelector('.ContentItem.AnswerItem .RichContent-inner, .ContentItem.AnswerItem .RichText');
+      const firstAuthor = document.querySelector('.ContentItem.AnswerItem .AuthorInfo-name, .ContentItem.AnswerItem .UserLink-link');
+      if (firstAnswer) {
+        return {
+          title: expandedTitle ? safeText(expandedTitle.innerText) : (document.title || ''),
+          contentHtml: firstAnswer.innerHTML,
+          authorName: firstAuthor ? safeText(firstAuthor.innerText) : ''
+        };
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * 标题清洗：根据站点添加/清理标签
+ * @param {boolean} applyTags - 是否应用来源标签（【知乎】【新闻】等）
+ */
+function cleanTitleBySite(title, pageUrl, applyTags) {
   let t = safeText(title || "");
   if (!t) return t;
 
   const ensurePrefix = (str, prefix) => {
     if (!str || str.includes(prefix)) return str;
-    const m = str.match(/^((?:【[^【】]+】)+)/); // 保留已有前缀块
+    const m = str.match(/^((?:【[^【】]+】)+)/);
     if (m) return `${m[1]}${prefix}${str.slice(m[1].length)}`;
     return `${prefix}${str}`;
   };
@@ -48,7 +130,27 @@ function cleanTitleBySite(title, pageUrl) {
     return `${str}${suffix}`;
   };
 
-  // 腾讯新闻
+  // 如果关闭了标签功能，只做清理不加标签
+  if (!applyTags) {
+    // 仍然清理已有的后缀标签（如知乎的 "- xxx的回答"）
+    const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+    if (isZhihu) {
+      t = t.replace(/\s*[-]\s*.*?的回答/, "");
+    }
+    // 清理腾讯新闻后缀
+    const isTencentNews =
+      /(^|\.)qq\.com/i.test(new URL(pageUrl || location.href).hostname) ||
+      /inews\.qq\.com/i.test(pageUrl || "") ||
+      /news\.qq\.com/i.test(pageUrl || "");
+    if (isTencentNews) {
+      t = t.replace(/(\s*[_\-｜|]\s*腾讯新闻\s*)$/i, "");
+      t = t.replace(/(\s*[_\-｜|]\s*腾讯网\s*)$/i, "");
+    }
+    return t.trim();
+  }
+
+  // ===== 以下开启标签时生效 =====
+
   const isTencentNews =
     /(^|\.)qq\.com/i.test(new URL(pageUrl || location.href).hostname) ||
     /inews\.qq\.com/i.test(pageUrl || "") ||
@@ -60,23 +162,15 @@ function cleanTitleBySite(title, pageUrl) {
     t = ensurePrefix(t, "【新闻】");
   }
 
-  // 新浪
   const isSina = /(^|\.)sina\.com\.cn/i.test(new URL(pageUrl || location.href).hostname);
-  if (isSina) {
-    t = ensurePrefix(t, "【新闻】");
-  }
+  if (isSina) { t = ensurePrefix(t, "【新闻】"); }
 
-  // 搜狐
   const isSohu = /(^|\.)sohu\.com/i.test(new URL(pageUrl || location.href).hostname);
-  if (isSohu) {
-    t = ensurePrefix(t, "【新闻】");
-  }
+  if (isSohu) { t = ensurePrefix(t, "【新闻】"); }
 
-  // 知乎
   const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
   if (isZhihu) {
     t = t.replace(/\s*[-]\s*.*?的回答/, "");
-    // 知乎适配：不需要新闻前缀，将站点标识放在标题后方
     t = ensureSuffix(t, "【知乎】");
   }
 
@@ -84,258 +178,126 @@ function cleanTitleBySite(title, pageUrl) {
 }
 
 /**
- * 针对特定站点的正文清洗（截断、去噪）
+ * 正文清洗
  */
 function cleanTextBySite(text, pageUrl) {
   let t = text || "";
   if (!t) return t;
-
   const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
-
   if (isZhihu) {
-    // 1. 去除开头的“xxx人赞同了该回答”
     t = t.replace(/^\s*.*?人赞同了该回答\s*/, "");
-
-    // 2. 截断“编辑于...”或“发布于...”
-    // 示例：编辑于 2026-01-05 14:22・辽宁
-    // 示例：发布于 2026-01-04 12:05
-    const patterns = [
-      /编辑于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/,
-      /发布于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/
-    ];
-
+    const patterns = [/编辑于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/, /发布于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/];
     let minIndex = -1;
     for (const p of patterns) {
       const match = p.exec(t);
-      if (match) {
-        if (minIndex === -1 || match.index < minIndex) {
-          minIndex = match.index;
-        }
-      }
+      if (match) { if (minIndex === -1 || match.index < minIndex) minIndex = match.index; }
     }
-
-    if (minIndex !== -1) {
-      t = t.substring(0, minIndex);
-    }
+    if (minIndex !== -1) t = t.substring(0, minIndex);
   }
-
   return t.trim();
 }
 
 /**
- * 针对特定站点的作者信息清洗
+ * 作者信息清洗
  */
 function cleanBylineBySite(byline, pageUrl, doc) {
   let b = safeText(byline || "");
   if (!b) return b;
-
   const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
-
   if (isZhihu) {
     b = b.replace(/^关于作者\s*/i, "");
     const parsed = extractZhihuAuthorName(b, doc || document) || "";
     if (parsed.trim()) return parsed.trim();
   }
-
   return b.trim();
 }
 
-/**
- * 知乎适配：提取作者用户名，优先 byline，其次 DOM，失败时返回原文
- */
 function extractZhihuAuthorName(bylineText, doc) {
   try {
     const text = safeText(bylineText || "");
-    // 1) 直接从 byline 中抓取 “关于作者xxx” 或首个连续用户名
     const bylineMatch = text.match(/关于作者\s*([^\s·,，。/|｜]+)/);
     if (bylineMatch && bylineMatch[1]) return bylineMatch[1];
     const firstToken = text.match(/^[\p{L}\p{N}_-]+/u);
     if (firstToken && firstToken[0]) return firstToken[0];
-
-    // 2) DOM fallback：常见作者位置
     const d = doc || document;
     if (d) {
-      const selectors = [
-        'meta[itemprop="author"]',
-        'meta[name="author"]',
-        '.AuthorInfo .AuthorInfo-head span',
-        '.ContentItem .AuthorInfo-name span',
-        '.AuthorInfo a[href*="/people/"] span',
-        'a.UserLink-link',
-        '.UserLink-link'
-      ];
+      const selectors = ['meta[itemprop="author"]', 'meta[name="author"]', '.AuthorInfo .AuthorInfo-head span', '.ContentItem .AuthorInfo-name span', '.AuthorInfo a[href*="/people/"] span', 'a.UserLink-link', '.UserLink-link'];
       for (const sel of selectors) {
         const el = d.querySelector(sel);
         const name = safeText(el ? (el.content || el.innerText || el.textContent) : "");
         if (name) return name;
       }
     }
-  } catch (_) {
-    // ignore and fall through
-  }
+  } catch (_) {}
   return bylineText;
 }
 
-/**
- * 归一化图片 URL：
- * - //example.com/a.jpg?x=1 -> https://example.com/a.jpg
- * - http(s)://... -> 去掉 ?# 后缀
- * - data: / blob: -> 丢弃
- * - 相对路径 -> 转绝对
- *
- * allowNoExt=true：允许腾讯这种无扩展名图片（/641）返回
- */
 function normalizeImageUrl(src, allowNoExt = false) {
   if (!src) return "";
   src = String(src).trim();
   if (!src) return "";
-
   if (src.startsWith("data:") || src.startsWith("blob:")) return "";
   if (src.startsWith("//")) src = "https:" + src;
-
-  try {
-    src = new URL(src, location.href).toString();
-  } catch (_) { }
-
+  try { src = new URL(src, location.href).toString(); } catch (_) {}
   src = src.split("#")[0].split("?")[0];
-
   const lower = src.toLowerCase();
   const hasExt = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"].some(ext => lower.endsWith(ext));
-
   if (hasExt) return src;
-  if (allowNoExt) return src; // 允许腾讯这种无扩展名
-
+  if (allowNoExt) return src;
   return "";
 }
 
-/**
- * 生成要写入帖子的图片表示：
- * - 普通站点：优先输出直链（你论坛可识别 .jpg 自动渲染）
- * - 腾讯新闻（无扩展名常见）：输出 <img src="...">
- */
 function formatImageForPost(url) {
   if (!url) return "";
-
   const isTencentInews = /inews\.gtimg\.com/i.test(url) || /inews\.qq\.com/i.test(location.href);
-
-  if (isTencentInews) {
-    return `<img src="${url}">`;
-  }
-
-  // 默认：输出 url（方便你论坛识别 jpg/png 自动渲染）
+  if (isTencentInews) return `<img src="${url}">`;
   return url;
 }
 
-/**
- * HTML -> 纯文本（尽量保留段落/换行/列表）
- * 并把 <img> 转成图片直链 或 <img src="...">（腾讯适配）
- */
 function htmlToTextWithParagraphs(html) {
   if (!html) return "";
-
   const doc = new DOMParser().parseFromString(html, "text/html");
   const out = [];
-
-  const blockTags = new Set([
-    "P", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "ASIDE",
-    "H1", "H2", "H3", "H4", "H5", "H6",
-    "BLOCKQUOTE", "PRE",
-    "UL", "OL", "LI",
-    "TABLE", "TR"
-  ]);
-
-  function pushNewline(count = 1) {
-    while (count-- > 0) out.push("\n");
-  }
-
+  const blockTags = new Set(["P","DIV","SECTION","ARTICLE","HEADER","FOOTER","ASIDE","H1","H2","H3","H4","H5","H6","BLOCKQUOTE","PRE","UL","OL","LI","TABLE","TR"]);
+  function pushNewline(count = 1) { while (count-- > 0) out.push("\n"); }
   function walk(node) {
     if (!node) return;
-
-    if (node.nodeType === Node.TEXT_NODE) {
-      const t = node.nodeValue.replace(/[ \t]+/g, " ");
-      if (t) out.push(t);
-      return;
-    }
-
+    if (node.nodeType === Node.TEXT_NODE) { const t = node.nodeValue.replace(/[ \t]+/g, " "); if (t) out.push(t); return; }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
-
     const tag = node.tagName;
-
-    if (tag === "BR") {
-      pushNewline(1);
-      return;
-    }
-
-    // 图片处理：腾讯新闻可能无扩展名，所以 allowNoExt=true
+    if (tag === "BR") { pushNewline(1); return; }
     if (tag === "IMG") {
       const src = node.getAttribute("src") || "";
-      const fallback =
-        node.getAttribute("data-src") ||
-        node.getAttribute("data-original") ||
-        node.getAttribute("data-lazy-src") ||
-        "";
-
-      const url =
-        normalizeImageUrl(src, true) ||
-        normalizeImageUrl(fallback, true);
-
+      const fallback = node.getAttribute("data-src") || node.getAttribute("data-original") || node.getAttribute("data-lazy-src") || "";
+      const url = normalizeImageUrl(src, true) || normalizeImageUrl(fallback, true);
       const imgText = formatImageForPost(url);
-      if (imgText) {
-        pushNewline(2);
-        out.push(imgText);
-        pushNewline(2);
-      }
+      if (imgText) { pushNewline(2); out.push(imgText); pushNewline(2); }
       return;
     }
-
-    if (tag === "LI") {
-      pushNewline(1);
-      out.push("- ");
-    }
-
-    if (tag === "PRE") {
-      pushNewline(1);
-      out.push(node.innerText || node.textContent || "");
-      pushNewline(2);
-      return;
-    }
-
+    if (tag === "LI") { pushNewline(1); out.push("- "); }
+    if (tag === "PRE") { pushNewline(1); out.push(node.innerText || node.textContent || ""); pushNewline(2); return; }
     for (const child of node.childNodes) walk(child);
-
-    if (blockTags.has(tag)) {
-      pushNewline(tag === "LI" ? 1 : 2);
-    }
+    if (blockTags.has(tag)) pushNewline(tag === "LI" ? 1 : 2);
   }
-
   walk(doc.body);
-
-  let text = out.join("")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
+  let text = out.join("").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  // 图片去重：保留 jpg/png/gif，舍弃 webp 重复
+  text = deduplicateImages(text);
   return text;
 }
 
-/**
- * Readability 全文提取（返回：带段落文本 + 元信息）
- */
 function extractWithReadability(pageUrl) {
   try {
     if (typeof Readability === "undefined") return null;
-
     const docClone = document.cloneNode(true);
     const reader = new Readability(docClone);
     const article = reader.parse();
     if (!article) return null;
-
     const contentHtml = article.content || "";
     const textWithParagraphs = htmlToTextWithParagraphs(contentHtml);
-
-    const cleanedTitle = cleanTitleBySite(article.title || document.title || "", pageUrl || location.href);
+    const cleanedTitle = cleanTitleBySite(article.title || document.title || "", pageUrl || location.href, titleTagEnabled);
     const cleanedText = cleanTextBySite(textWithParagraphs, pageUrl || location.href);
     const cleanedByline = cleanBylineBySite(article.byline || "", pageUrl || location.href, docClone);
-
     return {
       title: cleanedTitle,
       text: safeText(cleanedText) || "",
@@ -343,9 +305,7 @@ function extractWithReadability(pageUrl) {
       byline: safeText(cleanedByline) || "",
       siteName: safeText(article.siteName) || ""
     };
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 /**
@@ -368,41 +328,24 @@ async function fillForumPostFormFromStorage() {
     return;
   }
 
-  const now = new Date();
-  const ts =
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ` +
-    `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-
   const meta = lastClip.extractedMeta || {};
   const metaLines = [];
   if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
   if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
 
-  const header =
-    `【来源】${lastClip.pageTitle || ""}
+  const header = `【来源】${lastClip.pageTitle || ""}
 【链接】${lastClip.pageUrl || ""}
 ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
 `;
 
-  const body =
-    lastClip.selectionText
-      ? lastClip.selectionText
-      : (lastClip.extractedFullText
-        ? lastClip.extractedFullText
-        : (lastClip.pageUrl
-          ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}`
-          : ""
-        )
-      );
+  const body = lastClip.selectionText
+    ? lastClip.selectionText
+    : (lastClip.extractedFullText
+      ? lastClip.extractedFullText
+      : (lastClip.pageUrl ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}` : ""));
 
-  // 标题：你之前需要加【新闻】前缀就在这里加
-  // const TITLE_PREFIX = "【新闻】";
-  // const finalTitle = (lastClip.pageTitle || "转发").startsWith(TITLE_PREFIX) ? (lastClip.pageTitle || "转发") : (TITLE_PREFIX + (lastClip.pageTitle || "转发"));
-  // titleEl.value = truncate(finalTitle, 60);
-
-  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href);
+  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href, titleTagEnabled);
   titleEl.value = truncate(finalTitle, 60);
-
   msgEl.value = header + "\n" + body;
   if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
 
@@ -416,33 +359,60 @@ ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
   }
 }
 
-// 处理 background.js 发来的“抓取内容”请求
+// ==================== 消息处理 ====================
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== "GET_CLIP") return;
 
   const rawTitle = document.title || "";
   const pageUrl = location.href || "";
-  const pageTitle = cleanTitleBySite(rawTitle, pageUrl);
+  const applyTags = titleTagEnabled;
 
-  // 1) 有选中 → 用选中（保留段落 + 处理图片）
+  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl).hostname);
+
+  if (isZhihu) {
+    const zhihuAnswer = extractCurrentZhihuAnswer();
+    if (zhihuAnswer) {
+      const selHtml = getSelectionHtml();
+      let selText = selHtml ? htmlToTextWithParagraphs(selHtml) : "";
+      selText = cleanTextBySite(selText, pageUrl);
+      if (selText) {
+        sendResponse({
+          pageTitle: cleanTitleBySite(rawTitle, pageUrl, applyTags),
+          pageUrl,
+          selectionText: selText,
+          extractedFullText: "",
+          extractedMeta: { byline: zhihuAnswer.authorName, siteName: '知乎' }
+        });
+      } else {
+        const contentText = htmlToTextWithParagraphs(zhihuAnswer.contentHtml);
+        const cleanedText = cleanTextBySite(contentText, pageUrl);
+        sendResponse({
+          pageTitle: cleanTitleBySite(zhihuAnswer.title, pageUrl, applyTags),
+          pageUrl,
+          selectionText: "",
+          extractedFullText: cleanedText,
+          extractedMeta: { byline: zhihuAnswer.authorName, siteName: '知乎' }
+        });
+      }
+      return;
+    }
+  }
+
+  const pageTitle = cleanTitleBySite(rawTitle, pageUrl, applyTags);
   const selHtml = getSelectionHtml();
   let selText = selHtml ? htmlToTextWithParagraphs(selHtml) : "";
   selText = cleanTextBySite(selText, pageUrl);
 
   if (selText) {
     sendResponse({
-      pageTitle,
-      pageUrl,
-      selectionText: selText,
-      extractedFullText: "",
-      extractedMeta: {}
+      pageTitle, pageUrl, selectionText: selText,
+      extractedFullText: "", extractedMeta: {}
     });
     return;
   }
 
-  // 2) 无选中 → Readability 全文提取（标题也清洗）
   const extracted = extractWithReadability(pageUrl);
-
   sendResponse({
     pageTitle: (extracted && extracted.title) ? extracted.title : pageTitle,
     pageUrl,
@@ -456,5 +426,118 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   });
 });
 
-// 如果当前就是发帖页，尝试自动填充
-fillForumPostFormFromStorage();
+// ==================== 初始化 ====================
+
+// 先加载设置，再执行表单填充（确保读取到最新设置）
+loadSettings().then(() => fillForumPostFormFromStorage());
+
+
+// ==================== 图片去重 ====================
+
+function getImageBaseName(url) {
+  if (!url) return "";
+  try {
+    const cleanUrl = url.split("?")[0].split("#")[0];
+    const parts = cleanUrl.split("/");
+    const filename = parts[parts.length - 1];
+    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+  } catch (e) { return ""; }
+}
+
+function isWebpUrl(url) {
+  if (!url) return false;
+  return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
+}
+
+function deduplicateImages(text) {
+  if (!text) return text;
+  const imgRegex = /(?:<img[^>]*src=["']?([^"'>\s]+)["']?[^>]*>|(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp)))/gi;
+  const seen = new Map();
+  const toRemove = new Set();
+  let match;
+  while ((match = imgRegex.exec(text)) !== null) {
+    const url = match[1] || match[2];
+    if (!url) continue;
+    const baseName = getImageBaseName(url);
+    if (!baseName) continue;
+    const isWebp = isWebpUrl(url);
+    if (seen.has(baseName)) {
+      const existing = seen.get(baseName);
+      if (!existing.isWebp && isWebp) {
+        toRemove.add(url);
+      } else if (existing.isWebp && !isWebp) {
+        toRemove.add(existing.url);
+        seen.set(baseName, { url, isWebp });
+      } else {
+        toRemove.add(url);
+      }
+    } else {
+      seen.set(baseName, { url, isWebp });
+    }
+  }
+  let result = text;
+  for (const url of toRemove) {
+    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const imgTagRegex = new RegExp(`<img[^>]*src=["']?${escaped}["']?[^>]*>`, "gi");
+    result = result.replace(imgTagRegex, "");
+    const urlRegex = new RegExp(`\n?\s*${escaped}\s*\n?`, "gi");
+    result = result.replace(urlRegex, "\n");
+  }
+  return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+
+
+// ==================== 图片去重 ====================
+
+function getImageBaseName(url) {
+  if (!url) return "";
+  try {
+    const cleanUrl = url.split("?")[0].split("#")[0];
+    const parts = cleanUrl.split("/");
+    const filename = parts[parts.length - 1];
+    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+  } catch (e) { return ""; }
+}
+
+function isWebpUrl(url) {
+  if (!url) return false;
+  return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
+}
+
+function deduplicateImages(text) {
+  if (!text) return text;
+  const imgRegex = /(?:<img[^>]*src=["']?([^"'>\s]+)["']?[^>]*>|(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp)))/gi;
+  const seen = new Map();
+  const toRemove = new Set();
+  let match;
+  while ((match = imgRegex.exec(text)) !== null) {
+    const url = match[1] || match[2];
+    if (!url) continue;
+    const baseName = getImageBaseName(url);
+    if (!baseName) continue;
+    const isWebp = isWebpUrl(url);
+    if (seen.has(baseName)) {
+      const existing = seen.get(baseName);
+      if (!existing.isWebp && isWebp) {
+        toRemove.add(url);
+      } else if (existing.isWebp && !isWebp) {
+        toRemove.add(existing.url);
+        seen.set(baseName, { url, isWebp });
+      } else {
+        toRemove.add(url);
+      }
+    } else {
+      seen.set(baseName, { url, isWebp });
+    }
+  }
+  let result = text;
+  for (const url of toRemove) {
+    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const imgTagRegex = new RegExp(`<img[^>]*src=["']?${escaped}["']?[^>]*>`, "gi");
+    result = result.replace(imgTagRegex, "");
+    const urlRegex = new RegExp(`\n?\s*${escaped}\s*\n?`, "gi");
+    result = result.replace(urlRegex, "\n");
+  }
+  return result.replace(/\n{3,}/g, "\n\n").trim();
+}
