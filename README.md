@@ -1,12 +1,108 @@
-# forum-clipper-253874
+# 253874 快速转发
 
-A browser extension to quickly repost news articles to https://www.253874.net
+一键将网页内容转发到里屋论坛（253874.net）的浏览器扩展。
 
-## Features
-- One-click repost with selected text or full article
-- Readability-based content extraction
-- Image handling for Sina / Tencent News
-- Auto-fill forum post form
+## 功能特点
 
-## Development
-- Chrome / Edge extension
+- 🔍 **智能提取**：自动识别网页正文，保留段落和图片
+- ✂️ **选中转发**：支持手动选中部分内容转发
+- 🌐 **站点适配**：腾讯新闻、知乎、新浪、搜狐等自动优化格式
+- 📝 **自动填充**：一键填充论坛发帖表单
+- ⚙️ **灵活设置**：可自定义标题是否带来源标签（【知乎】【新闻】等）
+
+## 安装方式
+
+### 方式一：Chrome 网上应用店（推荐）
+1. 访问 [Chrome 应用商店页面]（待发布）
+2. 点击"添加至 Chrome"
+
+### 方式二：开发者模式
+1. 下载本项目文件夹
+2. 打开 Chrome → `chrome://extensions/`
+3. 开启右上角"开发者模式"
+4. 点击"加载已解压的扩展程序"
+5. 选择本项目文件夹
+
+## 使用方法
+
+1. 打开任意网页（新闻、知乎回答等）
+2. 右键点击页面
+3. 选择"转发到 253874（填充发帖页）"
+4. 自动跳转到论坛发帖页，内容已填充
+5. 确认无误后点击发帖
+
+## 设置选项
+
+右键菜单中选择「⚙️ 转发设置」，或在扩展管理页面点击"扩展程序选项"进入设置页。
+
+| 选项 | 说明 | 默认值 |
+|------|------|--------|
+| **标题带来源标签** | 开启后标题自动添加【知乎】【新闻】等来源标识 | ✅ 开启 |
+
+设置存储在 `chrome.storage.sync`，支持跨设备同步，修改后即时生效。
+
+## 支持的网站
+
+- ✅ 腾讯新闻（自动去除后缀、图片兼容）
+- ✅ 知乎（精确提取当前回答、作者信息）
+- ✅ 新浪新闻
+- ✅ 搜狐新闻
+- ✅ 其他任意网页（Readability 通用提取）
+
+## 技术栈
+
+- Chrome Extension Manifest V3
+- Mozilla Readability（全文提取库）
+- 原生 JavaScript（无框架依赖）
+
+## 隐私说明
+
+- **不收集任何个人信息**
+- **不上传浏览数据**
+- 所有数据处理在本地完成
+- 仅在你主动转发时访问当前页面内容
+
+## 开发说明
+
+### 项目结构
+```
+forum_clipper/
+├── manifest.json      # 扩展配置（含 options_page）
+├── background.js      # 后台服务（右键菜单）
+├── content.js         # 内容提取（核心逻辑）
+├── settings.html      # 设置页面
+├── settings.js        # 设置页逻辑
+├── Readability.js     # 第三方库（Mozilla）
+├── icons/             # 图标文件
+├── _locales/          # 国际化文件
+└── README.md          # 说明文档
+```
+
+### 本地开发
+1. 克隆项目
+2. `chrome://extensions/` → 加载已解压的扩展程序
+3. 修改代码后点击扩展卡片上的"刷新"按钮
+
+## 更新日志
+
+### v0.2.0 (2026-04-26)
+- 🆕 新增设置页面，支持自定义标题行为
+- 🆕 可开关标题来源标签（【知乎】【新闻】等）
+- 🔧 右键菜单新增「⚙️ 转发设置」入口
+- 🔧 设置存储在 `chrome.storage.sync`，支持跨设备同步
+
+### v0.1.0 (2026-01-05)
+- 初始版本发布
+- 支持知乎多回答页面精确提取
+- 优化腾讯新闻图片处理
+- 改进标题清洗逻辑
+
+## 反馈与支持
+
+- 项目地址：https://github.com/Liwu253874/forum-clipper-253874
+- 论坛讨论：https://www.253874.net/
+- 问题反馈：GitHub Issues
+
+## 许可证
+
+MIT License
