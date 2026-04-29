@@ -18,5 +18,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   payload.autoSubmit = AUTO_SUBMIT;
 
   await chrome.storage.local.set({ lastClip: payload });
-  await chrome.tabs.create({ url: FORUM_POST_URL });
+
+  // 视频帖子需要指定分类 typeid=8
+  const postUrl = payload.isVideo
+    ? `${FORUM_POST_URL}?type_id=8`
+    : FORUM_POST_URL;
+  await chrome.tabs.create({ url: postUrl });
 });
