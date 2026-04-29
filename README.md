@@ -1,6 +1,6 @@
 # 253874 快速转发 / Forum Clipper for 253874
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://www.253874.net/)
 
@@ -28,6 +28,8 @@
 
 | 功能 | 说明 |
 |------|------|
+| 🎬 **视频转发** | 支持 Bilibili 和 YouTube 视频一键转发，自动生成 embed 嵌入代码 |
+| | Support Bilibili & YouTube video forwarding with auto-generated embed codes |
 | 🔍 **智能提取** | 自动识别网页正文，保留段落、图片和列表格式 |
 | | Automatically detects article body, preserves paragraphs, images, and lists |
 | ✂️ **选中转发** | 支持手动选中部分内容进行精准转发 |
@@ -38,6 +40,26 @@
 | One-click auto-fill of forum post form — no manual copy-paste needed |
 | ⚙️ **灵活设置** | 可自定义标题是否带来源标签（【知乎】【新闻】等） |
 | | Customize whether titles include source tags like [Zhihu] or [News] |
+
+---
+
+## 🎬 视频转发功能 / Video Forwarding
+
+**支持的视频平台：**
+
+| 平台 | 识别方式 | 生成代码 |
+|------|----------|----------|
+| **Bilibili** | 自动识别 URL 中的 BV 号 | `<embed>` 标签嵌入播放器 |
+| **YouTube** | 自动识别 URL 中的 v= 参数 | `<embed>` 标签嵌入播放器 |
+
+**使用方式：**
+1. 打开 Bilibili 或 YouTube 视频页面
+2. 右键点击页面，选择「转发到 253874」
+3. 自动跳转论坛发帖页，已填充：
+   - **标题**：视频标题
+   - **内容**：embed 视频播放器代码
+   - **相关链接**：源网页地址
+   - **分类**：视频（typeid=8）
 
 ---
 
@@ -54,10 +76,8 @@
 
 1. **下载项目 / Download the project**
    ```bash
-   # 通过 MEGA 服务器中转下载 / Download via MEGA server proxy
-   git clone https://207.56.20.163:19080/forum-clipper-253874.git
-   # 或从 GitHub 下载 ZIP 后解压
-   # Or download ZIP from GitHub and extract
+   # 从 GitHub 下载 / Download from GitHub
+   git clone https://github.com/Liwu253874/forum-clipper-253874.git
    ```
 
 2. **打开 Chrome 扩展管理页面 / Open Chrome Extensions page**
@@ -87,8 +107,8 @@
 ```
 ┌─────────────────────────────────────────────────────┐
 │  1. 打开任意网页 / Open any webpage                  │
-│     (新闻、知乎回答、博客等)                          │
-│     (News, Zhihu answers, blogs, etc.)              │
+│     (新闻、知乎回答、博客、视频等)                     │
+│     (News, Zhihu answers, blogs, videos, etc.)      │
 └──────────────────────┬──────────────────────────────┘
                        │
                        ▼
@@ -125,6 +145,9 @@
 - **完整文章转发 / Full Article Forwarding**: 不选中任何内容，直接右键转发，将提取整篇文章
   - Don't select anything, just right-click to forward — the entire article will be extracted
 
+- **视频转发 / Video Forwarding**: 在 Bilibili/YouTube 视频页右键转发，自动生成 embed 代码并选择"视频"分类
+  - Right-click on Bilibili/YouTube video pages — auto-generates embed code and selects "Video" category
+
 - **设置标题格式 / Customize Title Format**: 在设置页面可以开关标题来源标签
   - Toggle source tags in the title on/off in the settings page
 
@@ -155,6 +178,10 @@
 
 | 网站 / Site | 状态 / Status | 特性 / Features |
 |-------------|---------------|-----------------|
+| **Bilibili 视频** | ✅ 完美支持 | 自动识别 BV 号，生成 embed 播放器，选择"视频"分类 |
+| | | Auto-detect BV number, generate embed player, select "Video" category |
+| **YouTube 视频** | ✅ 完美支持 | 自动识别视频 ID，生成 embed 播放器，选择"视频"分类 |
+| | | Auto-detect video ID, generate embed player, select "Video" category |
 | **知乎 / Zhihu** | ✅ 完美支持 | 精确提取当前回答、作者信息、多回答页面定位 |
 | | | Precise extraction of current answer, author info, multi-answer page targeting |
 | **腾讯新闻 / Tencent News** | ✅ 完美支持 | 自动去除后缀、图片兼容处理 |
@@ -204,9 +231,9 @@ forum_clipper/
 | 🚫 **不收集个人信息** / No Personal Data Collection | 我们不会收集、存储或传输任何个人信息 |
 | | We do not collect, store, or transmit any personal information |
 | 🚫 **不上传浏览数据** / No Browsing Data Upload | 您的浏览历史和网页数据仅在本机处理 |
-| | Your browsing history and page data are processed only locally |
+| | Your browsing history and web data are processed only locally |
 | ✅ **本地处理** / Local Processing | 所有内容提取和格式转换均在浏览器本地完成 |
-| | All content extraction and format conversion happen locally in your browser |
+| | All content extraction and format conversion happen locally in the browser |
 | 🔐 **按需访问** / On-Demand Access | 仅在您主动点击转发时才会访问当前页面内容 |
 | | Current page content is only accessed when you actively click to forward |
 
@@ -218,7 +245,7 @@ forum_clipper/
 
 1. **克隆项目 / Clone the project**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Liwu253874/forum-clipper-253874.git
    cd forum_clipper
    ```
 
@@ -238,21 +265,30 @@ forum_clipper/
    - Use Chrome DevTools to debug content.js (press F12 on target page)
    - Use Service Worker debugging for background.js (click "View: Service Worker" on extension card)
 
-### 通过 MEGA 服务器中转 / Via MEGA Server Proxy
+### 分支管理 / Branch Management
 
-由于网络限制，GitHub 访问可能需要通过 MEGA 服务器中转：
-Due to network restrictions, GitHub access may need to go through the MEGA server proxy:
-
-```bash
-# MEGA 服务器信息 / MEGA Server Info
-# IP: 207.56.20.163
-# 端口 / Port: 19080
-# 用途 / Purpose: GitHub 仓库中转 / GitHub repository proxy
-```
+| 分支 | 用途 |
+|------|------|
+| **master** | 开发/测试分支，新功能先推到这里验证 |
+| **main** | 稳定分支，测试通过后才合并 |
 
 ---
 
 ## 📝 更新日志 / Changelog
+
+### v0.4.0 (2026-04-29)
+
+**新增功能 / New Features:**
+- 🎬 支持 Bilibili 和 YouTube 视频一键转发
+  - Support for Bilibili and YouTube video one-click forwarding
+- 🎬 自动识别视频页面，生成 embed 嵌入代码
+  - Auto-detect video pages and generate embed codes
+- 🎬 帖子内容自动使用 embed 标签嵌入视频播放器
+  - Post content auto-filled with embed video player
+- 🎬 自动选择"视频"分类（typeid=8）
+  - Auto-select "Video" category (typeid=8)
+- 🎬 相关链接自动填充源网页地址
+  - Related link auto-filled with source URL
 
 ### v0.3.0 (2026-04-29)
 
@@ -297,7 +333,7 @@ Due to network restrictions, GitHub access may need to go through the MEGA serve
 ## 💬 反馈与支持 / Feedback & Support
 
 | 渠道 / Channel | 链接 / Link |
-|----------------|-------------|
+|----------------|------------|
 | 🐛 **GitHub Issues** | https://github.com/Liwu253874/forum-clipper-253874/issues |
 | 💬 **论坛讨论 / Forum Discussion** | https://www.253874.net/ |
 | 📧 **项目地址 / Project** | https://github.com/Liwu253874/forum-clipper-253874 |
@@ -306,7 +342,7 @@ Due to network restrictions, GitHub access may need to go through the MEGA serve
 
 ## 📄 许可证 / License
 
-MIT License — 自由使用、修改和分发 / Free to use, modify, and distribute.
+MIT License — 自由使用、修改、分发 / Free to use, modify, and distribute.
 
 ---
 
