@@ -37,10 +37,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 function detectVideoPage(pageUrl) {
   const url = pageUrl || location.href || "";
 
-  // Bilibili 视频：匹配 /video/BVxxx
-  const bilibiliMatch = url.match(/\/video\/(BV[\d\w]{10,})/);
+  // Bilibili 视频：匹配任意位置的 BV 号（与 bv.html 一致）
+  const bilibiliMatch = url.match(/BV[\d\w]{10}/);
   if (bilibiliMatch) {
-    const bvid = bilibiliMatch[1];
+    const bvid = bilibiliMatch[0];
     return {
       type: "bilibili",
       videoId: bvid,
@@ -48,8 +48,8 @@ function detectVideoPage(pageUrl) {
     };
   }
 
-  // YouTube 视频：匹配 ?v=VIDEO_ID
-  const youtubeMatch = url.match(/[?\&]v=([a-zA-Z0-9_-]{11})/);
+  // YouTube 视频：匹配 v=VIDEO_ID（与 bv.html 一致）
+  const youtubeMatch = url.match(/v=([a-zA-Z0-9_-]{11})/);
   if (youtubeMatch) {
     const vid = youtubeMatch[1];
     return {
