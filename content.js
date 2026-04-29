@@ -28,6 +28,40 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ==================== 视频检测与嵌入 ====================
+
+/**
+ * 检测当前页面是否为 Bilibili 或 YouTube 视频页
+ * 返回 { type, videoId, embedCode } 或 null
+ */
+function detectVideoPage(pageUrl) {
+  const url = pageUrl || location.href || "";
+
+  // Bilibili 视频：匹配 /video/BVxxx
+  const bilibiliMatch = url.match(/\/video\/(BV[\d\w]{10,})/);
+  if (bilibiliMatch) {
+    const bvid = bilibiliMatch[1];
+    return {
+      type: "bilibili",
+      videoId: bvid,
+      embedCode: `<embed src="//player.bilibili.com/player.html?bvid=${bvid}&autoplay=false" width="550" height="440" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></embed>`
+    };
+  }
+
+  // YouTube 视频：匹配 ?v=VIDEO_ID
+  const youtubeMatch = url.match(/[?\&]v=([a-zA-Z0-9_-]{11})/);
+  if (youtubeMatch) {
+    const vid = youtubeMatch[1];
+    return {
+      type: "youtube",
+      videoId: vid,
+      embedCode: `<embed width="550" height="400" src="https://www.youtube.com/embed/${vid}?si=PTs2cBBlscZtXQDb&autoplay=false" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></embed>`
+    };
+  }
+
+  return null;
+}
+
 // ==================== 工具函数 ====================
 
 function getSelectionHtml() {
@@ -328,26 +362,52 @@ async function fillForumPostFormFromStorage() {
     return;
   }
 
-  const meta = lastClip.extractedMeta || {};
-  const metaLines = [];
-  if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
-  if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
+  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href, titleTagEnabled);
+  titleEl.value = truncate(finalTitle, 60);
 
-  const header = `【来源】${lastClip.pageTitle || ""}
+  // 视频帖子特殊处理
+  if (lastClip.isVideo) {
+    // 使用 embed 标签作为帖子内容
+    msgEl.value = lastClip.videoEmbedCode || "";
+    // 设置相关链接为源网页地址
+    if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+    // 设置分类为"视频" (typeid=8)
+    const typeSelect = document.querySelector('select[name="type_id"], select[name="typeid"], input[name="type_id"], input[name="typeid"]');
+    if (typeSelect) {
+      if (typeSelect.tagName === 'SELECT') {
+        // 尝试选择值为 8 的选项
+        for (const opt of typeSelect.options) {
+          if (opt.value === '8' || opt.text.includes('视频')) {
+            typeSelect.value = opt.value;
+            typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            break;
+          }
+        }
+      } else {
+        typeSelect.value = '8';
+      }
+    }
+  } else {
+    // 普通帖子处理
+    const meta = lastClip.extractedMeta || {};
+    const metaLines = [];
+    if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
+    if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
+
+    const header = `【来源】${lastClip.pageTitle || ""}
 【链接】${lastClip.pageUrl || ""}
 ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
 `;
 
-  const body = lastClip.selectionText
-    ? lastClip.selectionText
-    : (lastClip.extractedFullText
-      ? lastClip.extractedFullText
-      : (lastClip.pageUrl ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}` : ""));
+    const body = lastClip.selectionText
+      ? lastClip.selectionText
+      : (lastClip.extractedFullText
+        ? lastClip.extractedFullText
+        : (lastClip.pageUrl ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}` : ""));
 
-  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href, titleTagEnabled);
-  titleEl.value = truncate(finalTitle, 60);
-  msgEl.value = header + "\n" + body;
-  if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+    msgEl.value = header + "\n" + body;
+    if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+  }
 
   await chrome.storage.local.remove("lastClip");
 
@@ -367,6 +427,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const rawTitle = document.title || "";
   const pageUrl = location.href || "";
   const applyTags = titleTagEnabled;
+
+  // 优先检测视频页面
+  const videoInfo = detectVideoPage(pageUrl);
+  if (videoInfo) {
+    sendResponse({
+      pageTitle: cleanTitleBySite(rawTitle, pageUrl, applyTags),
+      pageUrl,
+      isVideo: true,
+      videoType: videoInfo.type,
+      videoEmbedCode: videoInfo.embedCode,
+      selectionText: "",
+      extractedFullText: "",
+      extractedMeta: { siteName: videoInfo.type === 'bilibili' ? 'Bilibili' : 'YouTube' }
+    });
+    return;
+  }
 
   const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl).hostname);
 
