@@ -28,6 +28,40 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ==================== 视频检测与嵌入 ====================
+
+/**
+ * 检测当前页面是否为 Bilibili 或 YouTube 视频页
+ * 返回 { type, videoId, embedCode } 或 null
+ */
+function detectVideoPage(pageUrl) {
+  const url = pageUrl || location.href || "";
+
+  // Bilibili 视频：匹配 /video/BVxxx
+  const bilibiliMatch = url.match(/\/video\/(BV[\d\w]{10,})/);
+  if (bilibiliMatch) {
+    const bvid = bilibiliMatch[1];
+    return {
+      type: "bilibili",
+      videoId: bvid,
+      embedCode: `<embed src="//player.bilibili.com/player.html?bvid=${bvid}&autoplay=false" width="550" height="440" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></embed>`
+    };
+  }
+
+  // YouTube 视频：匹配 ?v=VIDEO_ID
+  const youtubeMatch = url.match(/[?\&]v=([a-zA-Z0-9_-]{11})/);
+  if (youtubeMatch) {
+    const vid = youtubeMatch[1];
+    return {
+      type: "youtube",
+      videoId: vid,
+      embedCode: `<embed width="550" height="400" src="https://www.youtube.com/embed/${vid}?si=PTs2cBBlscZtXQDb&autoplay=false" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></embed>`
+    };
+  }
+
+  return null;
+}
+
 // ==================== 工具函数 ====================
 
 function getSelectionHtml() {
@@ -328,26 +362,52 @@ async function fillForumPostFormFromStorage() {
     return;
   }
 
-  const meta = lastClip.extractedMeta || {};
-  const metaLines = [];
-  if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
-  if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
+  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href, titleTagEnabled);
+  titleEl.value = truncate(finalTitle, 60);
 
-  const header = `【来源】${lastClip.pageTitle || ""}
+  // 视频帖子特殊处理
+  if (lastClip.isVideo) {
+    // 使用 embed 标签作为帖子内容
+    msgEl.value = lastClip.videoEmbedCode || "";
+    // 设置相关链接为源网页地址
+    if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+    // 设置分类为"视频" (typeid=8)
+    const typeSelect = document.querySelector('select[name="type_id"], select[name="typeid"], input[name="type_id"], input[name="typeid"]');
+    if (typeSelect) {
+      if (typeSelect.tagName === 'SELECT') {
+        // 尝试选择值为 8 的选项
+        for (const opt of typeSelect.options) {
+          if (opt.value === '8' || opt.text.includes('视频')) {
+            typeSelect.value = opt.value;
+            typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            break;
+          }
+        }
+      } else {
+        typeSelect.value = '8';
+      }
+    }
+  } else {
+    // 普通帖子处理
+    const meta = lastClip.extractedMeta || {};
+    const metaLines = [];
+    if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
+    if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
+
+    const header = `【来源】${lastClip.pageTitle || ""}
 【链接】${lastClip.pageUrl || ""}
 ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
 `;
 
-  const body = lastClip.selectionText
-    ? lastClip.selectionText
-    : (lastClip.extractedFullText
-      ? lastClip.extractedFullText
-      : (lastClip.pageUrl ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}` : ""));
+    const body = lastClip.selectionText
+      ? lastClip.selectionText
+      : (lastClip.extractedFullText
+        ? lastClip.extractedFullText
+        : (lastClip.pageUrl ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}` : ""));
 
-  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href, titleTagEnabled);
-  titleEl.value = truncate(finalTitle, 60);
-  msgEl.value = header + "\n" + body;
-  if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+    msgEl.value = header + "\n" + body;
+    if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+  }
 
   await chrome.storage.local.remove("lastClip");
 
@@ -367,6 +427,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const rawTitle = document.title || "";
   const pageUrl = location.href || "";
   const applyTags = titleTagEnabled;
+
+  // 优先检测视频页面
+  const videoInfo = detectVideoPage(pageUrl);
+  if (videoInfo) {
+    sendResponse({
+      pageTitle: cleanTitleBySite(rawTitle, pageUrl, applyTags),
+      pageUrl,
+      isVideo: true,
+      videoType: videoInfo.type,
+      videoEmbedCode: videoInfo.embedCode,
+      selectionText: "",
+      extractedFullText: "",
+      extractedMeta: { siteName: videoInfo.type === 'bilibili' ? 'Bilibili' : 'YouTube' }
+    });
+    return;
+  }
 
   const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl).hostname);
 
@@ -434,19 +510,67 @@ loadSettings().then(() => fillForumPostFormFromStorage());
 
 // ==================== 图片去重 ====================
 
+/**
+ * 提取图片基础标识（去除尺寸后缀）
+ * 例如：v2-xxx_720w.jpg → v2-xxx
+ *       v2-xxx_r.jpg → v2-xxx
+ */
 function getImageBaseName(url) {
   if (!url) return "";
   try {
     const cleanUrl = url.split("?")[0].split("#")[0];
     const parts = cleanUrl.split("/");
     const filename = parts[parts.length - 1];
-    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+    // 去除扩展名
+    let base = filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
+    // 去除知乎尺寸后缀：_720w, _1200w, _r, _hd, _b 等
+    base = base.replace(/_(?:\d+w|r|hd|b|raw)$/i, "");
+    return base;
   } catch (e) { return ""; }
 }
 
 function isWebpUrl(url) {
   if (!url) return false;
   return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
+}
+
+/**
+ * 判断是否为知乎尺寸压缩图（_720w 等）
+ */
+function isZhihuResizedUrl(url) {
+  if (!url) return false;
+  const cleanUrl = url.split("?")[0].split("#")[0];
+  // 匹配知乎尺寸后缀：_720w, _1200w, _b 等（不包括 _r 原始图）
+  return /_\d+w$/i.test(cleanUrl) || /_b$/i.test(cleanUrl);
+}
+
+/**
+ * 判断是否为知乎原始高清图（_r.jpg）
+ */
+function isZhihuOriginalUrl(url) {
+  if (!url) return false;
+  const cleanUrl = url.split("?")[0].split("#")[0];
+  return /_r\.(jpg|jpeg|png|gif|webp)$/i.test(cleanUrl);
+}
+
+/**
+ * 图片优先级：数字越大越优先保留
+ * 1 = 普通图片/webp
+ * 2 = 普通非 webp
+ * 3 = 知乎原始图但 webp
+ * 4 = 知乎原始高清图（_r，非 webp）
+ */
+function getImagePriority(url) {
+  if (!url) return 0;
+  const isWebp = isWebpUrl(url);
+  const isZhihuOriginal = isZhihuOriginalUrl(url);
+  const isZhihuResized = isZhihuResizedUrl(url);
+  
+  if (isZhihuOriginal && !isWebp) return 4; // 知乎原始高清图（最高优先）
+  if (isZhihuOriginal && isWebp) return 3;  // 知乎原始图但 webp
+  if (isZhihuResized) return 1;              // 知乎压缩图（最低优先）
+  if (!isWebp) return 2;                     // 普通非 webp
+  return 1;                                  // 普通 webp
 }
 
 function deduplicateImages(text) {
@@ -460,75 +584,20 @@ function deduplicateImages(text) {
     if (!url) continue;
     const baseName = getImageBaseName(url);
     if (!baseName) continue;
-    const isWebp = isWebpUrl(url);
+    const priority = getImagePriority(url);
+    
     if (seen.has(baseName)) {
       const existing = seen.get(baseName);
-      if (!existing.isWebp && isWebp) {
-        toRemove.add(url);
-      } else if (existing.isWebp && !isWebp) {
+      if (priority > existing.priority) {
+        // 新图优先级更高，替换
         toRemove.add(existing.url);
-        seen.set(baseName, { url, isWebp });
+        seen.set(baseName, { url, priority });
       } else {
+        // 现有图优先级更高或相等，丢弃新图
         toRemove.add(url);
       }
     } else {
-      seen.set(baseName, { url, isWebp });
-    }
-  }
-  let result = text;
-  for (const url of toRemove) {
-    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const imgTagRegex = new RegExp(`<img[^>]*src=["']?${escaped}["']?[^>]*>`, "gi");
-    result = result.replace(imgTagRegex, "");
-    const urlRegex = new RegExp(`\n?\s*${escaped}\s*\n?`, "gi");
-    result = result.replace(urlRegex, "\n");
-  }
-  return result.replace(/\n{3,}/g, "\n\n").trim();
-}
-
-
-
-// ==================== 图片去重 ====================
-
-function getImageBaseName(url) {
-  if (!url) return "";
-  try {
-    const cleanUrl = url.split("?")[0].split("#")[0];
-    const parts = cleanUrl.split("/");
-    const filename = parts[parts.length - 1];
-    return filename.replace(/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i, "");
-  } catch (e) { return ""; }
-}
-
-function isWebpUrl(url) {
-  if (!url) return false;
-  return /\.webp$/i.test(url.split("?")[0].split("#")[0]);
-}
-
-function deduplicateImages(text) {
-  if (!text) return text;
-  const imgRegex = /(?:<img[^>]*src=["']?([^"'>\s]+)["']?[^>]*>|(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp)))/gi;
-  const seen = new Map();
-  const toRemove = new Set();
-  let match;
-  while ((match = imgRegex.exec(text)) !== null) {
-    const url = match[1] || match[2];
-    if (!url) continue;
-    const baseName = getImageBaseName(url);
-    if (!baseName) continue;
-    const isWebp = isWebpUrl(url);
-    if (seen.has(baseName)) {
-      const existing = seen.get(baseName);
-      if (!existing.isWebp && isWebp) {
-        toRemove.add(url);
-      } else if (existing.isWebp && !isWebp) {
-        toRemove.add(existing.url);
-        seen.set(baseName, { url, isWebp });
-      } else {
-        toRemove.add(url);
-      }
-    } else {
-      seen.set(baseName, { url, isWebp });
+      seen.set(baseName, { url, priority });
     }
   }
   let result = text;
