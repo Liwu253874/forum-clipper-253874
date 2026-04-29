@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "253874 快速转发",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "一键将网页内容转发到里屋论坛（253874.net）",
   "permissions": ["contextMenus", "tabs", "scripting", "storage"],
   "host_permissions": ["https://www.253874.net/*"],
