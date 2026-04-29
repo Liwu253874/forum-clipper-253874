@@ -1,6 +1,6 @@
 # 253874 快速转发 / Forum Clipper for 253874
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://www.253874.net/)
 
@@ -253,6 +253,20 @@ Due to network restrictions, GitHub access may need to go through the MEGA serve
 ---
 
 ## 📝 更新日志 / Changelog
+
+### v0.3.0 (2026-04-29)
+
+**新增功能 / New Features:**
+- 🎬 支持 Bilibili 和 YouTube 视频转发
+  - Support for Bilibili and YouTube video forwarding
+- 🎬 视频页右键自动识别并生成 embed 嵌入代码
+  - Auto-detect video pages and generate embed codes
+- 🎬 帖子内容自动使用 embed 标签嵌入视频播放器
+  - Post content auto-filled with embed video player
+- 🎬 自动选择"视频"分类（typeid=8）
+  - Auto-select "Video" category (typeid=8)
+- 🎬 相关链接自动填充源网页地址
+  - Related link auto-filled with source URL
 
 ### v0.2.0 (2026-04-26)
 
