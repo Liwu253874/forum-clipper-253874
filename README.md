@@ -235,6 +235,7 @@ forum_clipper/
 | ✅ **本地处理** / Local Processing | 所有内容提取和格式转换均在浏览器本地完成 |
 | | All content extraction and format conversion happen locally in the browser |
 | 🔐 **按需访问** / On-Demand Access | 仅在您主动点击转发时才会访问当前页面内容 |
+| 📄 **完整隐私政策** / Full Privacy Policy | [查看隐私政策](https://liwu253874.github.io/forum-clipper-253874/privacy.html) |
 | | Current page content is only accessed when you actively click to forward |
 
 ---
