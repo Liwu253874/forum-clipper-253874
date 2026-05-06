@@ -146,10 +146,39 @@ function extractCurrentZhihuAnswer() {
 }
 
 /**
+ * 截断视频标题：中文≤22字 / 英文≤36字符，超出加…
+ */
+function truncateVideoTitle(t) {
+  if (!t) return "";
+  // 计算"可视长度"：汉字=1，英文/数字/符号=0.5
+  let len = 0;
+  for (const ch of t) {
+    if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch)) {
+      len += 1;
+    } else {
+      len += 0.5;
+    }
+  }
+  // 超过限制则截断
+  if (len > 22) {
+    let result = "";
+    let acc = 0;
+    for (const ch of t) {
+      const w = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch) ? 1 : 0.5;
+      if (acc + w > 22) break;
+      result += ch;
+      acc += w;
+    }
+    t = result + "\u2026";
+  }
+  return t;
+}
+
+/**
  * 标题清洗：根据站点添加/清理标签
  * @param {boolean} applyTags - 是否应用来源标签（【知乎】【新闻】等）
  */
-function cleanTitleBySite(title, pageUrl, applyTags) {
+function cleanTitleBySite(title, pageUrl, applyTags, videoType) {
   let t = safeText(title || "");
   if (!t) return t;
 
@@ -163,6 +192,28 @@ function cleanTitleBySite(title, pageUrl, applyTags) {
     if (!str || str.includes(suffix)) return str;
     return `${str}${suffix}`;
   };
+
+  // ===== 视频标题特殊处理 =====
+  if (videoType === "bilibili") {
+    // 去除 "_哔哩哔哩_bilibili" 后缀
+    t = t.replace(/\s*[_\-｜|]\s*_哔哩哔哩_bilibili\s*$/i, "");
+    t = t.replace(/\s*_哔哩哔哩_bilibili\s*$/i, "");
+    t = t.replace(/\s*[_\-｜|]\s*Bilibili\s*$/i, "");
+    t = t.trim();
+    t = ensureSuffix(t, "【视频】");
+    return t;
+  }
+
+  if (videoType === "youtube") {
+    // 去除常见的 YouTube 后缀
+    t = t.replace(/\s*[-–—]\s*YouTube\s*$/i, "");
+    t = t.replace(/\s*_YouTube\s*$/i, "");
+    t = t.trim();
+    // 截断标题
+    t = truncateVideoTitle(t);
+    t = ensureSuffix(t, "【视频】");
+    return t;
+  }
 
   // 如果关闭了标签功能，只做清理不加标签
   if (!applyTags) {
@@ -362,7 +413,9 @@ async function fillForumPostFormFromStorage() {
     return;
   }
 
-  const finalTitle = cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href, titleTagEnabled);
+  const finalTitle = lastClip.isVideo
+    ? (lastClip.pageTitle || "转发")
+    : cleanTitleBySite(lastClip.pageTitle || "转发", lastClip.pageUrl || location.href, titleTagEnabled);
   titleEl.value = truncate(finalTitle, 60);
 
   // 视频帖子特殊处理
@@ -432,7 +485,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const videoInfo = detectVideoPage(pageUrl);
   if (videoInfo) {
     sendResponse({
-      pageTitle: cleanTitleBySite(rawTitle, pageUrl, applyTags),
+      pageTitle: cleanTitleBySite(rawTitle, pageUrl, applyTags, videoInfo.type),
       pageUrl,
       isVideo: true,
       videoType: videoInfo.type,
