@@ -67,9 +67,11 @@
 
 ### 方式一：Chrome 网上应用店（推荐）/ Chrome Web Store (Recommended)
 
-1. 访问 Chrome 应用商店页面（待发布）
+> 🎉 **Chrome 网上应用店审核已通过！现已正式上线！**
+
+1. 访问 [Chrome 应用商店页面](https://chromewebstore.google.com/detail/253874-%E5%BF%AB%E9%80%9F%E8%BD%AC%E5%8F%91/dojngmckcjkegmnkmibdffecejjieebn?utm_source=item-share-cb)
 2. 点击"添加至 Chrome"
-3. Visit the Chrome Web Store page (coming soon)
+3. Visit the [Chrome Web Store page](https://chromewebstore.google.com/detail/253874-%E5%BF%AB%E9%80%9F%E8%BD%AC%E5%8F%91/dojngmckcjkegmnkmibdffecejjieebn?utm_source=item-share-cb)
 4. Click "Add to Chrome"
 
 ### 方式二：开发者模式安装 / Developer Mode Installation
