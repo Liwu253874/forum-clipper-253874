@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "253874 快速转发",
-  "version": "0.3.0",
+  "name": "里屋253874 快速转发",
+  "version": "0.3.1",
   "description": "一键将网页内容转发到里屋论坛（253874.net）",
   "permissions": ["contextMenus", "tabs", "scripting", "storage"],
   "host_permissions": ["https://www.253874.net/*"],
@@ -20,7 +20,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "253874 快速转发",
+    "default_title": "里屋253874 快速转发",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
