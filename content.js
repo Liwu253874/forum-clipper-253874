@@ -11,6 +11,7 @@
 // ==================== 设置读取 ====================
 
 let titleTagEnabled = true; // 默认开启（向后兼容）
+const NEWS_CATEGORY_NAME = "新闻";
 
 async function loadSettings() {
   try {
@@ -76,6 +77,72 @@ function getSelectionHtml() {
 
 function safeText(str) {
   return (str || "").replace(/\r\n/g, "\n").trim();
+}
+
+function getHostname(pageUrl) {
+  try {
+    return new URL(pageUrl || location.href).hostname;
+  } catch (_) {
+    return "";
+  }
+}
+
+function isTencentNewsUrl(pageUrl) {
+  const hostname = getHostname(pageUrl);
+  return /(^|\.)qq\.com/i.test(hostname) ||
+    /inews\.qq\.com/i.test(pageUrl || "") ||
+    /news\.qq\.com/i.test(pageUrl || "");
+}
+
+function isSinaNewsUrl(pageUrl) {
+  return /(^|\.)sina\.com\.cn/i.test(getHostname(pageUrl));
+}
+
+function isSohuNewsUrl(pageUrl) {
+  return /(^|\.)sohu\.com/i.test(getHostname(pageUrl));
+}
+
+function isNewsSiteUrl(pageUrl) {
+  return isTencentNewsUrl(pageUrl) || isSinaNewsUrl(pageUrl) || isSohuNewsUrl(pageUrl);
+}
+
+function stripUrlTracking(url) {
+  if (!url) return "";
+  try {
+    const u = new URL(url, location.href);
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch (_) {
+    return String(url).split("?")[0].split("#")[0];
+  }
+}
+
+function getCanonicalPageUrl() {
+  const selectors = [
+    'link[rel="canonical"]',
+    'meta[property="og:url"]',
+    'meta[name="og:url"]',
+    'meta[property="twitter:url"]',
+    'meta[name="twitter:url"]'
+  ];
+
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    const value = el && (el.href || el.content || el.getAttribute("href") || el.getAttribute("content"));
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function cleanPageUrlBySite(pageUrl) {
+  if (isSohuNewsUrl(pageUrl)) {
+    const canonicalUrl = getCanonicalPageUrl();
+    const sourceUrl = canonicalUrl || pageUrl;
+    return stripUrlTracking(sourceUrl);
+  }
+  return pageUrl || "";
 }
 
 function truncate(str, maxLen) {
@@ -218,16 +285,12 @@ function cleanTitleBySite(title, pageUrl, applyTags, videoType) {
   // 如果关闭了标签功能，只做清理不加标签
   if (!applyTags) {
     // 仍然清理已有的后缀标签（如知乎的 "- xxx的回答"）
-    const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+    const isZhihu = /(^|\.)zhihu\.com/i.test(getHostname(pageUrl));
     if (isZhihu) {
       t = t.replace(/\s*[-]\s*.*?的回答/, "");
     }
     // 清理腾讯新闻后缀
-    const isTencentNews =
-      /(^|\.)qq\.com/i.test(new URL(pageUrl || location.href).hostname) ||
-      /inews\.qq\.com/i.test(pageUrl || "") ||
-      /news\.qq\.com/i.test(pageUrl || "");
-    if (isTencentNews) {
+    if (isTencentNewsUrl(pageUrl)) {
       t = t.replace(/(\s*[_\-｜|]\s*腾讯新闻\s*)$/i, "");
       t = t.replace(/(\s*[_\-｜|]\s*腾讯网\s*)$/i, "");
     }
@@ -236,24 +299,17 @@ function cleanTitleBySite(title, pageUrl, applyTags, videoType) {
 
   // ===== 以下开启标签时生效 =====
 
-  const isTencentNews =
-    /(^|\.)qq\.com/i.test(new URL(pageUrl || location.href).hostname) ||
-    /inews\.qq\.com/i.test(pageUrl || "") ||
-    /news\.qq\.com/i.test(pageUrl || "");
-
-  if (isTencentNews) {
+  if (isTencentNewsUrl(pageUrl)) {
     t = t.replace(/(\s*[_\-｜|]\s*腾讯新闻\s*)$/i, "");
     t = t.replace(/(\s*[_\-｜|]\s*腾讯网\s*)$/i, "");
     t = ensurePrefix(t, "【新闻】");
   }
 
-  const isSina = /(^|\.)sina\.com\.cn/i.test(new URL(pageUrl || location.href).hostname);
-  if (isSina) { t = ensurePrefix(t, "【新闻】"); }
+  if (isSinaNewsUrl(pageUrl)) { t = ensurePrefix(t, "【新闻】"); }
 
-  const isSohu = /(^|\.)sohu\.com/i.test(new URL(pageUrl || location.href).hostname);
-  if (isSohu) { t = ensurePrefix(t, "【新闻】"); }
+  if (isSohuNewsUrl(pageUrl)) { t = ensurePrefix(t, "【新闻】"); }
 
-  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+  const isZhihu = /(^|\.)zhihu\.com/i.test(getHostname(pageUrl));
   if (isZhihu) {
     t = t.replace(/\s*[-]\s*.*?的回答/, "");
     t = ensureSuffix(t, "【知乎】");
@@ -268,7 +324,7 @@ function cleanTitleBySite(title, pageUrl, applyTags, videoType) {
 function cleanTextBySite(text, pageUrl) {
   let t = text || "";
   if (!t) return t;
-  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+  const isZhihu = /(^|\.)zhihu\.com/i.test(getHostname(pageUrl));
   if (isZhihu) {
     t = t.replace(/^\s*.*?人赞同了该回答\s*/, "");
     const patterns = [/编辑于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/, /发布于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/];
@@ -288,7 +344,7 @@ function cleanTextBySite(text, pageUrl) {
 function cleanBylineBySite(byline, pageUrl, doc) {
   let b = safeText(byline || "");
   if (!b) return b;
-  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl || location.href).hostname);
+  const isZhihu = /(^|\.)zhihu\.com/i.test(getHostname(pageUrl));
   if (isZhihu) {
     b = b.replace(/^关于作者\s*/i, "");
     const parsed = extractZhihuAuthorName(b, doc || document) || "";
@@ -393,6 +449,32 @@ function extractWithReadability(pageUrl) {
   } catch (e) { return null; }
 }
 
+function setForumPostCategory({ value, label }) {
+  const typeControl = document.querySelector('select[name="type_id"], select[name="typeid"], input[name="type_id"], input[name="typeid"]');
+  if (!typeControl) return false;
+
+  if (typeControl.tagName === "SELECT") {
+    for (const opt of typeControl.options) {
+      const optionText = opt.textContent || opt.innerText || "";
+      if ((value && opt.value === value) || (label && optionText.includes(label))) {
+        typeControl.value = opt.value;
+        typeControl.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (value) {
+    typeControl.value = value;
+    typeControl.dispatchEvent(new Event("input", { bubbles: true }));
+    typeControl.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * 在论坛发帖页自动填充表单
  */
@@ -424,22 +506,7 @@ async function fillForumPostFormFromStorage() {
     msgEl.value = lastClip.videoEmbedCode || "";
     // 设置相关链接为源网页地址
     if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
-    // 设置分类为"视频" (typeid=8)
-    const typeSelect = document.querySelector('select[name="type_id"], select[name="typeid"], input[name="type_id"], input[name="typeid"]');
-    if (typeSelect) {
-      if (typeSelect.tagName === 'SELECT') {
-        // 尝试选择值为 8 的选项
-        for (const opt of typeSelect.options) {
-          if (opt.value === '8' || opt.text.includes('视频')) {
-            typeSelect.value = opt.value;
-            typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            break;
-          }
-        }
-      } else {
-        typeSelect.value = '8';
-      }
-    }
+    setForumPostCategory({ value: "8", label: "视频" });
   } else {
     // 普通帖子处理
     const meta = lastClip.extractedMeta || {};
@@ -460,6 +527,9 @@ ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
 
     msgEl.value = header + "\n" + body;
     if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
+    if (lastClip.forumCategoryName) {
+      setForumPostCategory({ label: lastClip.forumCategoryName });
+    }
   }
 
   await chrome.storage.local.remove("lastClip");
@@ -478,11 +548,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== "GET_CLIP") return;
 
   const rawTitle = document.title || "";
-  const pageUrl = location.href || "";
+  const rawPageUrl = location.href || "";
+  const pageUrl = cleanPageUrlBySite(rawPageUrl);
   const applyTags = titleTagEnabled;
+  const forumCategoryName = isNewsSiteUrl(pageUrl) ? NEWS_CATEGORY_NAME : "";
 
   // 优先检测视频页面
-  const videoInfo = detectVideoPage(pageUrl);
+  const videoInfo = detectVideoPage(rawPageUrl);
   if (videoInfo) {
     sendResponse({
       pageTitle: cleanTitleBySite(rawTitle, pageUrl, applyTags, videoInfo.type),
@@ -497,7 +569,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
-  const isZhihu = /(^|\.)zhihu\.com/i.test(new URL(pageUrl).hostname);
+  const isZhihu = /(^|\.)zhihu\.com/i.test(getHostname(pageUrl));
 
   if (isZhihu) {
     const zhihuAnswer = extractCurrentZhihuAnswer();
@@ -511,7 +583,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           pageUrl,
           selectionText: selText,
           extractedFullText: "",
-          extractedMeta: { byline: zhihuAnswer.authorName, siteName: '知乎' }
+          extractedMeta: { byline: zhihuAnswer.authorName, siteName: '知乎' },
+          forumCategoryName
         });
       } else {
         const contentText = htmlToTextWithParagraphs(zhihuAnswer.contentHtml);
@@ -521,7 +594,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           pageUrl,
           selectionText: "",
           extractedFullText: cleanedText,
-          extractedMeta: { byline: zhihuAnswer.authorName, siteName: '知乎' }
+          extractedMeta: { byline: zhihuAnswer.authorName, siteName: '知乎' },
+          forumCategoryName
         });
       }
       return;
@@ -536,7 +610,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (selText) {
     sendResponse({
       pageTitle, pageUrl, selectionText: selText,
-      extractedFullText: "", extractedMeta: {}
+      extractedFullText: "", extractedMeta: {},
+      forumCategoryName
     });
     return;
   }
@@ -551,7 +626,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       excerpt: extracted.excerpt,
       byline: extracted.byline,
       siteName: extracted.siteName
-    } : {}
+    } : {},
+    forumCategoryName
   });
 });
 
