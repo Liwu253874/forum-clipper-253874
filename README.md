@@ -1,11 +1,14 @@
 # 253874 快速转发 / Forum Clipper for 253874
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
+[![Version](https://img.shields.io/badge/version-0.3.4-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://www.253874.net/)
 
 **一键将网页内容转发到里屋论坛（253874.net）的浏览器扩展。**
 **One-click browser extension to forward web content to the 253874.net forum.**
+
+当前发布版本为 **0.3.4**，已在 Chrome Web Store 发布。版本号以 `manifest.json` 为准。
+The current release is **0.3.4**, published on the Chrome Web Store. `manifest.json` is the source of truth for the version.
 
 ---
 
@@ -36,8 +39,12 @@
 | | Select specific content on the page for precise forwarding |
 | 🌐 **站点适配** | 腾讯新闻、知乎、新浪、搜狐等自动优化格式 |
 | | Auto-optimized formatting for Tencent News, Zhihu, Sina, Sohu, etc. |
+| **新闻分类** | 转发新浪、搜狐和腾讯新闻时，自动选定“新闻”分类（`type_id=5`） |
+| | Automatically select the News category (`type_id=5`) for Sina, Sohu, and Tencent news |
+| **搜狐链接清理** | 优先采用页面声明的规范链接，移除查询参数和片段标识，填入“相关链接” |
+| | Prefer the page-declared canonical URL for Sohu and remove query parameters and fragments from the related link |
 | 📝 **自动填充** | 一键填充论坛发帖表单，无需手动复制粘贴 |
-| One-click auto-fill of forum post form — no manual copy-paste needed |
+| | One-click auto-fill of forum post form — no manual copy-paste needed |
 | ⚙️ **灵活设置** | 可自定义标题是否带来源标签（【知乎】【新闻】等） |
 | | Customize whether titles include source tags like [Zhihu] or [News] |
 
@@ -186,12 +193,12 @@
 | | | Auto-detect video ID, generate embed player, select "Video" category |
 | **知乎 / Zhihu** | ✅ 完美支持 | 精确提取当前回答、作者信息、多回答页面定位 |
 | | | Precise extraction of current answer, author info, multi-answer page targeting |
-| **腾讯新闻 / Tencent News** | ✅ 完美支持 | 自动去除后缀、图片兼容处理 |
-| | | Auto-remove suffixes, image compatibility handling |
-| **新浪新闻 / Sina News** | ✅ 支持 | 标准文章提取 |
-| | | Standard article extraction |
-| **搜狐新闻 / Sohu News** | ✅ 支持 | 标准文章提取 |
-| | | Standard article extraction |
+| **腾讯新闻 / Tencent News** | ✅ 完美支持 | 自动去除后缀、图片兼容处理、选定“新闻”分类（`type_id=5`） |
+| | | Auto-remove suffixes, image compatibility handling, select News (`type_id=5`) |
+| **新浪新闻 / Sina News** | ✅ 支持 | 标准文章提取、选定“新闻”分类（`type_id=5`） |
+| | | Standard article extraction, select News (`type_id=5`) |
+| **搜狐新闻 / Sohu News** | ✅ 支持 | 标准文章提取、清理相关链接、选定“新闻”分类（`type_id=5`） |
+| | | Standard article extraction, clean related links, select News (`type_id=5`) |
 | **其他网页 / Other Websites** | ✅ 通用支持 | 基于 Readability 的通用全文提取 |
 | | | General full-text extraction based on Readability |
 
@@ -220,7 +227,6 @@ forum_clipper/
 │   ├── icon16.png
 │   ├── icon48.png
 │   └── icon128.png
-├── _locales/              # 国际化文件 / Internationalization files
 └── README.md              # 说明文档 / This documentation
 ```
 
@@ -249,7 +255,7 @@ forum_clipper/
 1. **克隆项目 / Clone the project**
    ```bash
    git clone https://github.com/Liwu253874/forum-clipper-253874.git
-   cd forum_clipper
+   cd forum-clipper-253874
    ```
 
 2. **加载到 Chrome / Load into Chrome**
@@ -278,6 +284,18 @@ forum_clipper/
 ---
 
 ## 📝 更新日志 / Changelog
+
+### v0.3.4 (2026-09-13, Chrome Web Store)
+
+- 搜狐转发优先使用页面声明的 canonical / Open Graph 等链接，并移除 `?` 查询参数和 `#` 片段；页面未提供规范链接时，清理当前页面地址。仅删除参数不会将 `/xtopic/` 自动转换为 `/a/`，实际文章地址取决于页面提供的元数据。
+- Sohu forwarding prefers page-declared canonical / Open Graph metadata and removes query parameters and fragments. Without metadata, it cleans the current URL; removing parameters alone does not convert an `/xtopic/` URL to an `/a/` article URL.
+- 新浪、搜狐、腾讯新闻转发自动选择“新闻”分类，明确使用 `type_id=5`，兼容下拉框和输入字段。
+- News forwarding from Sina, Sohu, and Tencent selects News with explicit `type_id=5`, supporting select and input fields.
+- 包含此前的权限整改：移除不必要的 `tabs`、未使用的 `scripting` 和独立的 `host_permissions` 声明；保留 `contextMenus`、`storage`。声明式内容脚本仍匹配 `<all_urls>`，以支持用户在不同网页发起转发。
+- Includes the permission cleanup: removed unnecessary `tabs`, unused `scripting`, and the separate `host_permissions` declaration. Retains `contextMenus`, `storage`, and declarative content scripts matching `<all_urls>` for forwarding from different websites.
+
+> 历史记录中的 v0.4.0 是旧文档标记，保留供追溯；当前发布版本以 `manifest.json` 的 0.3.4 为准。
+> The historical v0.4.0 heading below is an older documentation label retained for reference; the current release version is 0.3.4 in `manifest.json`.
 
 ### v0.4.0 (2026-04-29)
 
