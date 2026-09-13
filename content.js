@@ -528,7 +528,7 @@ ${metaLines.length ? metaLines.join("\n") + "\n" : ""}
     msgEl.value = header + "\n" + body;
     if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
     if (lastClip.forumCategoryName) {
-      setForumPostCategory({ label: lastClip.forumCategoryName });
+      setForumPostCategory({ value: lastClip.forumCategoryName === NEWS_CATEGORY_NAME ? "5" : undefined, label: lastClip.forumCategoryName });
     }
   }
 
