@@ -11,12 +11,14 @@
 // ==================== 设置读取 ====================
 
 let titleTagEnabled = true; // 默认开启（向后兼容）
+let sourceInfoPosition = "top";
 const NEWS_CATEGORY_NAME = "新闻";
 
 async function loadSettings() {
   try {
-    const result = await chrome.storage.sync.get({ titleTagEnabled: true });
+    const result = await chrome.storage.sync.get({ titleTagEnabled: true, sourceInfoPosition: "top" });
     titleTagEnabled = result.titleTagEnabled;
+    sourceInfoPosition = result.sourceInfoPosition === "bottom" ? "bottom" : "top";
   } catch (e) {
     // ignore
   }
@@ -24,6 +26,9 @@ async function loadSettings() {
 
 // 监听设置变更
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.sourceInfoPosition !== undefined) {
+    sourceInfoPosition = changes.sourceInfoPosition.newValue === "bottom" ? "bottom" : "top";
+  }
   if (area === "sync" && changes.titleTagEnabled !== undefined) {
     titleTagEnabled = changes.titleTagEnabled.newValue;
   }
@@ -514,18 +519,22 @@ async function fillForumPostFormFromStorage() {
     if (meta.siteName) metaLines.push(`【站点】${meta.siteName}`);
     if (meta.byline) metaLines.push(`【作者】${meta.byline}`);
 
-    const header = `【来源】${lastClip.pageTitle || ""}
-【链接】${lastClip.pageUrl || ""}
-${metaLines.length ? metaLines.join("\n") + "\n" : ""}
-`;
+    const sourceLines = [`【来源】${lastClip.pageTitle || ""}`];
+    if (sourceInfoPosition !== "bottom") sourceLines.push(`【链接】${lastClip.pageUrl || ""}`);
+    sourceLines.push(...metaLines);
+    const sourceInfo = sourceLines.join("\n");
 
     const body = lastClip.selectionText
       ? lastClip.selectionText
       : (lastClip.extractedFullText
         ? lastClip.extractedFullText
-        : (lastClip.pageUrl ? `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}` : ""));
+        : (lastClip.pageUrl
+          ? (sourceInfoPosition === "bottom" ? "（未能提取正文）" : `（未能提取正文，仅记录链接）\n${lastClip.pageUrl}`)
+          : ""));
 
-    msgEl.value = header + "\n" + body;
+    msgEl.value = sourceInfoPosition === "bottom"
+      ? [body, sourceInfo].filter(Boolean).join("\n\n")
+      : [sourceInfo, body].filter(Boolean).join("\n\n");
     if (linkEl && lastClip.pageUrl) linkEl.value = lastClip.pageUrl;
     if (lastClip.forumCategoryName) {
       setForumPostCategory({ value: lastClip.forumCategoryName === NEWS_CATEGORY_NAME ? "5" : undefined, label: lastClip.forumCategoryName });

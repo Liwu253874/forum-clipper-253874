@@ -1,14 +1,14 @@
 # 253874 快速转发 / Forum Clipper for 253874
 
-[![Version](https://img.shields.io/badge/version-0.3.4-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
+[![Version](https://img.shields.io/badge/version-0.3.5-blue.svg)](https://github.com/Liwu253874/forum-clipper-253874)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://www.253874.net/)
 
 **一键将网页内容转发到里屋论坛（253874.net）的浏览器扩展。**
 **One-click browser extension to forward web content to the 253874.net forum.**
 
-当前发布版本为 **0.3.4**，已在 Chrome Web Store 发布。版本号以 `manifest.json` 为准。
-The current release is **0.3.4**, published on the Chrome Web Store. `manifest.json` is the source of truth for the version.
+当前代码版本为 **0.3.5**，待提交 Chrome Web Store；上一商店发布版本为 **0.3.4**。代码版本号以 `manifest.json` 为准，详见 [更新日志](CHANGELOG.md)。
+The current code version is **0.3.5**, pending Chrome Web Store submission; the previous store release is **0.3.4**. See the [changelog](CHANGELOG.md).
 
 ---
 
@@ -284,6 +284,13 @@ forum_clipper/
 ---
 
 ## 📝 更新日志 / Changelog
+
+### v0.3.5 (2026-10-15，待商店提交 / Pending Store Submission)
+
+- 设置页新增“转发来源信息位置”：顶部（默认）或文末。
+- 文末模式保留来源标题、站点及作者，不在来源区块添加链接；论坛“相关链接”字段和正文原有链接不变。
+- Add a source information position setting: top (default) or bottom. Bottom attribution omits the source URL while preserving the related-link field and links within the article.
+- 本地回归测试 / Regression tests: `node --test tests/source-position.test.cjs`.
 
 ### v0.3.4 (2026-09-13, Chrome Web Store)
 

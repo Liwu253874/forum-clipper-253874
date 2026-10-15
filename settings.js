@@ -2,10 +2,20 @@
 
 document.addEventListener("DOMContentLoaded", async () => {
   const checkbox = document.getElementById("titleTagEnabled");
+  const positionInputs = document.querySelectorAll('input[name="sourceInfoPosition"]');
 
   // 读取当前设置
-  const result = await chrome.storage.sync.get({ titleTagEnabled: true });
+  const result = await chrome.storage.sync.get({ titleTagEnabled: true, sourceInfoPosition: "top" });
   checkbox.checked = result.titleTagEnabled;
+  const position = result.sourceInfoPosition === "bottom" ? "bottom" : "top";
+  positionInputs.forEach(input => {
+    input.checked = input.value === position;
+    input.addEventListener("change", async () => {
+      if (!input.checked) return;
+      await chrome.storage.sync.set({ sourceInfoPosition: input.value });
+      showToast();
+    });
+  });
 
   // 切换时自动保存
   checkbox.addEventListener("change", async () => {

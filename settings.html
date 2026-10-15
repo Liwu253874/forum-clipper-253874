@@ -55,6 +55,10 @@
       font-size: 14px; opacity: 0; transition: all 0.3s; pointer-events: none;
     }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .source-position { border: 0; min-width: 0; }
+    .source-position legend { font-size: 15px; font-weight: 500; margin-bottom: 16px; }
+    .position-options { display: flex; gap: 24px; flex-wrap: wrap; }
+    .position-options label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -75,6 +79,15 @@
           <span class="slider"></span>
         </label>
       </div>
+    </div>
+    <div class="section">
+      <fieldset class="source-position">
+        <legend>转发来源信息位置</legend>
+        <div class="position-options">
+          <label><input type="radio" name="sourceInfoPosition" value="top" checked>顶部</label>
+          <label><input type="radio" name="sourceInfoPosition" value="bottom">文末（不含链接）</label>
+        </div>
+      </fieldset>
     </div>
     <div class="footer">设置会自动保存，无需手动操作</div>
   </div>
